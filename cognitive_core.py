@@ -1,20 +1,17 @@
 import warnings
-warnings.filterwarnings("ignore", category=ResourceWarning)
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 import asyncio
 import os
 import threading
-warnings.filterwarnings("ignore") # This deletes the green FutureWarning spam in your UI
 
 # --- THE ENV IGNITION (MUST BE BEFORE CUSTOM IMPORTS) ---
 from dotenv import load_dotenv
 load_dotenv() 
 
 # --- THE GLOBAL SILENCER ---
-# Mutes garbage-collection spam (unclosed sockets, ghost processes, deprecations)
-warnings.simplefilter("ignore", ResourceWarning)
-warnings.simplefilter("ignore", DeprecationWarning)
+warnings.filterwarnings("ignore", category=ResourceWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="livekit")
 # --------------------------------------------------------
+from config import FRIDAY_ROOT, WORKSPACE_ROOT
 
 # --- BRINGING THE SYSTEMS ONLINE ---
 from watchdog_node import pacemaker
@@ -51,10 +48,9 @@ from memory_matrix import VectorMemory
 # Import Pillar 3: OS Control
 from os_control import SystemController
 
-load_dotenv()
-
 # Configure the secondary Vision Sub-Agent
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "models/gemini-2.0-flash-exp")
 
 # Initialize the Hippocampus
 brain_db = VectorMemory()
@@ -858,7 +854,7 @@ async def ignite_core():
             )
             
             # Switched voice from Kore to Aoede for a smoother output stream
-            session = AgentSession(llm=RealtimeModel(model="models/gemini-3.1-flash-live-preview", voice="Aoede", temperature=0.7))
+            session = AgentSession(llm=RealtimeModel(model=GEMINI_LIVE_MODEL, voice="Aoede", temperature=0.7))
             await session.start(agent=agent, room=room)
             print("[COGNITIVE CORE]: F.R.I.D.A.Y. is online.")
             await asyncio.Event().wait()
