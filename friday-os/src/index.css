@@ -5,3 +5,17 @@ body {
   color: #00ffcc; 
   font-family: 'Courier New', Courier, monospace; 
 }
+
+@keyframes spin-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+.animate-spin-reverse {
+  animation: spin-reverse 15s linear infinite;
+}
+.animate-spin-slow {
+  animation: spin 20s linear infinite;
+}
+.hud-glow {
+  text-shadow: 0 0 8px rgba(0, 255, 204, 0.6);
+}

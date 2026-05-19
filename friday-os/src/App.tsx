@@ -24,11 +24,22 @@ const TelemetryScanner = () => (
   </div>
 );
 
-const CognitiveVisualizer = () => (
-  <div className="w-40 h-40 border-2 border-[#00ffcc]/40 rounded-full flex items-center justify-center p-2">
-    <div className="w-full h-full border-2 border-[#00ffcc]/40 rounded-full animate-pulse relative flex items-center justify-center">
-      <Radio size={40} className="text-[#00ffcc]/80 opacity-60" />
-      <div className="absolute inset-0 border-t-2 border-[#00ffcc]/80 rounded-full animate-spin-slow"></div>
+const JarvisCore = () => (
+  <div className="relative w-48 h-48 flex items-center justify-center scale-90">
+    {/* Outer Dashed Ring */}
+    <div className="absolute inset-0 border-[1px] border-dashed border-[#00ffcc]/40 rounded-full animate-spin-slow"></div>
+    {/* Middle Solid Ring */}
+    <div className="absolute inset-2 border-[2px] border-t-transparent border-[#00ffcc]/60 rounded-full animate-spin-reverse"></div>
+    {/* Inner Data Ring */}
+    <div className="absolute inset-6 border-[4px] border-dotted border-[#00ffcc]/30 rounded-full animate-spin-slow"></div>
+    {/* Center Core */}
+    <div className="absolute inset-10 bg-[radial-gradient(circle,_rgba(0,255,204,0.15)_0%,_transparent_70%)] rounded-full flex items-center justify-center animate-pulse">
+        <Radio size={32} className="text-[#00ffcc] hud-glow opacity-80" />
+    </div>
+    {/* Static Crosshairs */}
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-30">
+        <div className="w-full h-[1px] bg-[#00ffcc]"></div>
+        <div className="h-full w-[1px] bg-[#00ffcc] absolute"></div>
     </div>
   </div>
 );
@@ -66,9 +77,9 @@ export default function FridayOS() {
             position: { x: (Math.random() * 300) + 50, y: (nodes.length * 100) + 50 }, // Simple vertical stack for flow
             data: { label: `⚡ ${data.payload.task.toUpperCase()}` },
             style: {
-              backgroundColor: '#111',
+              backgroundColor: 'transparent',
               color: '#00ffcc',
-              border: '2px solid #00ffcc',
+              border: '1px solid rgba(0,255,204,0.3)',
               borderRadius: '0px',
               padding: '12px',
               fontSize: '11px',
@@ -119,6 +130,13 @@ export default function FridayOS() {
   return (
     <div className="h-screen w-screen bg-[#020202] text-[#00ffcc] flex flex-col p-6 overflow-hidden font-mono relative">
 
+      {/* GLOBAL RADIAL HUD OVERLAY */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden z-0 opacity-10">
+          <div className="w-[150vw] h-[150vw] border-[1px] border-[#00ffcc] rounded-full absolute animate-spin-slow"></div>
+          <div className="w-[100vw] h-[100vw] border-[2px] border-dashed border-[#00ffcc] rounded-full absolute animate-spin-reverse"></div>
+          <div className="w-[50vw] h-[50vw] border-[1px] border-[#00ffcc] rounded-full absolute"></div>
+      </div>
+
       {/* BACKGROUND HEX LAYER */}
       <div className="absolute inset-0 bg-[url('/hex_bg.png')] opacity-10 pointer-events-none"></div>
 
@@ -142,7 +160,7 @@ export default function FridayOS() {
       <div className="flex flex-1 gap-6 overflow-hidden relative">
 
         {/* LEFT PANEL: COGNITIVE GEOMETRY */}
-        <div className="w-1/2 border-2 border-[#00ffcc]/30 bg-black rounded-sm relative overflow-hidden flex flex-col p-1 shadow-inner shadow-[#00ffcc]/20">
+        <div className="w-1/2 relative overflow-hidden flex flex-col p-1 rounded-3xl bg-black/20 backdrop-blur-md border border-[#00ffcc]/10 shadow-[0_0_30px_rgba(0,255,204,0.05)_inset]">
           <div className="bg-[#111] p-3 text-sm tracking-[0.2em] font-bold border border-[#00ffcc]/30 flex items-center justify-between">
             <div className="flex items-center gap-3"><Activity size={16} /> COGNITIVE NODE TRAJECTORY</div>
             <div className="text-xs opacity-70">ACTIVE PROTOCOLS: {nodes.length}</div>
@@ -150,7 +168,6 @@ export default function FridayOS() {
           <div className="flex-1 relative">
             <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} fitView className="dark">
               <Background color="#00ffcc" gap={20} size={1} style={{ opacity: 0.05 }} />
-              <Controls style={{ fill: '#00ffcc', backgroundColor: '#222' }} />
             </ReactFlow>
           </div>
           {/* AESTHETIC TELEMETRY OVERLAY */}
@@ -164,7 +181,7 @@ export default function FridayOS() {
         <div className="w-1/2 flex flex-col gap-6">
 
           {/* RECEPTION & COGNITIVE WAVEFORM */}
-          <div className="h-1/2 border-2 border-[#00ffcc]/30 bg-black rounded-sm flex flex-col p-1 overflow-hidden">
+          <div className="h-1/2 relative overflow-hidden flex flex-col p-1 rounded-3xl bg-black/20 backdrop-blur-md border border-[#00ffcc]/10 shadow-[0_0_30px_rgba(0,255,204,0.05)_inset]">
             <div className="bg-[#111] p-3 text-sm tracking-[0.2em] font-bold border border-[#00ffcc]/30 flex items-center gap-3">
               <Eye size={16} /> COGNITIVE FEED & WAVEFORM
             </div>
@@ -176,7 +193,7 @@ export default function FridayOS() {
               </div>
               {/* WAVEFORM & SCANNER */}
               <div className="w-2/5 flex flex-col gap-3 justify-center items-center">
-                <CognitiveVisualizer />
+                <JarvisCore />
                 <div className="text-center text-xs opacity-80 leading-relaxed tracking-wider text-[#00ffcc]">VOICE PROTOCOL<br />[LISTENING]</div>
               </div>
               <div className="absolute bottom-2 right-2 p-1 opacity-50 scale-75"><TelemetryScanner /></div>
@@ -184,7 +201,7 @@ export default function FridayOS() {
           </div>
 
           {/* AUDIT LOGS & DENSE DATA */}
-          <div className="h-1/2 border-2 border-[#00ffcc]/30 bg-black rounded-sm flex flex-col p-1 overflow-hidden relative">
+          <div className="h-1/2 relative overflow-hidden flex flex-col p-1 rounded-3xl bg-black/20 backdrop-blur-md border border-[#00ffcc]/10 shadow-[0_0_30px_rgba(0,255,204,0.05)_inset]">
             <div className="bg-[#111] p-3 text-sm tracking-[0.2em] font-bold border border-[#00ffcc]/30 flex items-center gap-3">
               <Terminal size={16} /> SYSTEM AUDIT & DENSE DATA MATRIX
             </div>
