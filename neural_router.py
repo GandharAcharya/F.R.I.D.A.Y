@@ -56,5 +56,5 @@ async def emit_cognitive_state(state_type: str, payload: dict):
     await manager.broadcast({"type": state_type, "payload": payload})
 
 def start_neural_router():
-    print("[NEURAL ROUTER]: WebSocket Engine Online. Listening on ws://localhost:8000/ws/cortex")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="error")
+    print("[NEURAL ROUTER]: WebSocket Engine Online. Listening on ws://localhost:8080/ws/cortex")
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="error")

@@ -42,18 +42,15 @@ def fetch_important_emails(search_keyword: str = "UNSEEN") -> str:
 
 def send_email(recipient: str, subject: str, body: str) -> str:
     """Sends an email using SMTP with Gmail App Passwords."""
-    # --- THE IDENTITY INTERCEPTOR ---
     import os
     
-    # If F.R.I.D.A.Y. tries to use a pronoun instead of a real address, 
-    # we dynamically route it to your personal inbox from the .env file.
-    target = recipient.lower().strip()
-    if target in ["me", "my email", "director", "myself", "gandhar"]:
+    # --- THE BULLETPROOF IDENTITY INTERCEPTOR ---
+    # If the LLM passes a pronoun or a name that isn't a valid email format, route to the Director.
+    if "@" not in recipient:
         recipient = os.getenv("GMAIL_USER")
-        
         if not recipient:
-            return "Failed: GMAIL_USER is missing from the .env file. I cannot find the Director's address."
-    # --------------------------------
+            return "Failed: GMAIL_USER is missing from the .env file."
+    # --------------------------------------------
 
     GMAIL_USER = os.getenv("GMAIL_USER")
     GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")

@@ -55,7 +55,7 @@ export default function FridayOS() {
 
   // --- WEBSOCKET NEURAL LINK ---
   useEffect(() => {
-    ws.current = new WebSocket("ws://localhost:8000/ws/cortex");
+    ws.current = new WebSocket("ws://localhost:8080/ws/cortex");
 
     ws.current.onopen = () => {
       setLogs(prev => [...prev, "[SYSTEM]: WebRTC & WebSocket Synced. F.R.I.D.A.Y. is online.", "ESTABLISHING OMNISCIENT PROTOCOL..."]);

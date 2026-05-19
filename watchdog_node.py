@@ -4,38 +4,29 @@ import gc
 import asyncio
 from neural_router import emit_cognitive_state
 
+def _broadcast_ui_safe(state, payload):
+    """Safely creates a temporary event loop to broadcast data from background threads."""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(emit_cognitive_state(state, payload))
+    except Exception:
+        pass
+
 class CognitiveWatchdog:
     def __init__(self):
         self.active_tasks = {}  
         self.is_monitoring = False
 
     def start_thought(self, task_name: str, timeout_seconds: int = 60):
-        # THE FIX: Force a minimum of 60 seconds regardless of what the tools request.
-        # This gives Opera, Gmail, and the NIM cluster plenty of time to work asynchronously.
         actual_timeout = max(timeout_seconds, 60)
         self.active_tasks[task_name] = {'start': time.time(), 'timeout': actual_timeout}
-        # Broadcast to UI
-        try:
-            loop = asyncio.get_event_loop()
-            asyncio.run_coroutine_threadsafe(
-                emit_cognitive_state("node_active", {"task": task_name, "status": "processing"}),
-                loop
-            )
-        except Exception as e:
-            pass
+        threading.Thread(target=_broadcast_ui_safe, args=("node_active", {"task": task_name, "status": "processing"}), daemon=True).start()
 
     def end_thought(self, task_name: str):
         if task_name in self.active_tasks:
             del self.active_tasks[task_name]
-            # Broadcast to UI
-            try:
-                loop = asyncio.get_event_loop()
-                asyncio.run_coroutine_threadsafe(
-                    emit_cognitive_state("node_complete", {"task": task_name, "status": "success"}),
-                    loop
-                )
-            except Exception as e:
-                pass
+            threading.Thread(target=_broadcast_ui_safe, args=("node_complete", {"task": task_name, "status": "success"}), daemon=True).start()
 
     def _auto_defibrillate(self, stalled_tasks: list):
         # THE FIX: Removed the TTS subprocess. She will no longer speak over the LLM.

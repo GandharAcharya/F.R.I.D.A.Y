@@ -41,7 +41,7 @@ async def run_autonomous_lifecycle(goal: str, project_name: str):
         except json.JSONDecodeError:
             pass # Fall through to aggressive Regex
 
-        # 3. If native fails, aggressively hunt for brackets and force-parse
+        # 3. Aggressively hunt for brackets
         if not tasks:
             match = re.search(r'\[(.*?)\]', clean_result, re.DOTALL)
             if match:
@@ -49,8 +49,13 @@ async def run_autonomous_lifecycle(goal: str, project_name: str):
                 try:
                     tasks = json.loads(raw_array_string)
                 except json.JSONDecodeError:
-                    # Absolute last resort: Python AST evaluation (handles single quotes and trailing commas)
                     tasks = ast.literal_eval(raw_array_string)
+            else:
+                # THE ULTIMATE FALLBACK: If Kimi writes a numbered list instead of JSON
+                # This strips numbers, bullets, and spaces from the start of each line
+                lines = [line.lstrip(' -*1234567890.') for line in clean_result.split('\n') if line.strip()]
+                if lines:
+                    tasks = lines
 
         if not tasks or not isinstance(tasks, list):
             raise ValueError("Extraction yielded empty or non-list data.")
