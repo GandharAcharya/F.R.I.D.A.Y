@@ -1,6 +1,8 @@
 import time
 import threading
 import gc
+import asyncio
+from neural_router import emit_cognitive_state
 
 class CognitiveWatchdog:
     def __init__(self):
@@ -12,10 +14,28 @@ class CognitiveWatchdog:
         # This gives Opera, Gmail, and the NIM cluster plenty of time to work asynchronously.
         actual_timeout = max(timeout_seconds, 60)
         self.active_tasks[task_name] = {'start': time.time(), 'timeout': actual_timeout}
+        # Broadcast to UI
+        try:
+            loop = asyncio.get_event_loop()
+            asyncio.run_coroutine_threadsafe(
+                emit_cognitive_state("node_active", {"task": task_name, "status": "processing"}),
+                loop
+            )
+        except Exception as e:
+            pass
 
     def end_thought(self, task_name: str):
         if task_name in self.active_tasks:
             del self.active_tasks[task_name]
+            # Broadcast to UI
+            try:
+                loop = asyncio.get_event_loop()
+                asyncio.run_coroutine_threadsafe(
+                    emit_cognitive_state("node_complete", {"task": task_name, "status": "success"}),
+                    loop
+                )
+            except Exception as e:
+                pass
 
     def _auto_defibrillate(self, stalled_tasks: list):
         # THE FIX: Removed the TTS subprocess. She will no longer speak over the LLM.
