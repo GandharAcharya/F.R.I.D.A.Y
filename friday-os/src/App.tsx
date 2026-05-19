@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import ReactFlow, { Background, Controls, applyNodeChanges, NodeChange } from 'reactflow';
+import ReactFlow, { Background, Controls, applyNodeChanges } from 'reactflow';
+import type { NodeChange } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Terminal, Activity, Eye, Code, Cpu } from 'lucide-react';
 
@@ -78,7 +79,7 @@ export default function FridayOS() {
             <Activity size={14}/> COGNITIVE NODE TREE
           </div>
           <div className="flex-1 relative">
-            <ReactFlow nodes={nodes} onNodesChange={onNodesChange} fitView theme="dark">
+            <ReactFlow nodes={nodes} onNodesChange={onNodesChange} fitView className="dark">
               <Background color="#00ffcc" gap={20} size={1} style={{ opacity: 0.1 }} />
               <Controls style={{ fill: '#00ffcc' }} />
             </ReactFlow>
