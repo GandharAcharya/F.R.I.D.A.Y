@@ -40,6 +40,45 @@ def fetch_important_emails(search_keyword: str = "UNSEEN") -> str:
     except Exception as e:
         return f"Gmail bridge failed: {str(e)}"
 
+def send_email(recipient: str, subject: str, body: str) -> str:
+    """Sends an email using SMTP with Gmail App Passwords."""
+    # --- THE IDENTITY INTERCEPTOR ---
+    import os
+    
+    # If F.R.I.D.A.Y. tries to use a pronoun instead of a real address, 
+    # we dynamically route it to your personal inbox from the .env file.
+    target = recipient.lower().strip()
+    if target in ["me", "my email", "director", "myself", "gandhar"]:
+        recipient = os.getenv("GMAIL_USER")
+        
+        if not recipient:
+            return "Failed: GMAIL_USER is missing from the .env file. I cannot find the Director's address."
+    # --------------------------------
+
+    GMAIL_USER = os.getenv("GMAIL_USER")
+    GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+
+    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
+        return "Gmail credentials missing. Tell the Director to set GMAIL_USER and GMAIL_APP_PASSWORD."
+
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+
+        msg = MIMEText(body)
+        msg['Subject'] = subject
+        msg['From'] = GMAIL_USER
+        msg['To'] = recipient
+
+        # Connect to Gmail SMTP server
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            server.sendmail(GMAIL_USER, recipient, msg.as_string())
+
+        return f"Successfully sent email to {recipient}."
+    except Exception as e:
+        return f"Gmail send failed: {str(e)}"
+
 async def scrape_tradingview_asset(asset_symbol: str = "XAUUSD") -> str:
     """Uses the Playwright bridge to dynamically read live chart data."""
     from browser_node import web_hands

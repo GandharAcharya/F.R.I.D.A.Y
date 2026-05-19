@@ -30,7 +30,7 @@ from intelligence_node import generate_macro_intel_report
 from nvidia_nim_node import delegate_to_nim_coder
 from workspace_registry import global_registry
 from autonomous_pipeline import run_autonomous_lifecycle
-from integration_node import fetch_important_emails, scrape_tradingview_asset
+from integration_node import fetch_important_emails, scrape_tradingview_asset, send_email
 from subconscious_fetch import start_subconscious_loop
 
 from guardian_node import deploy_guardian_swarm
@@ -738,6 +738,13 @@ async def check_personal_inbox(context: RunContext, search_term: str = "UNSEEN")
     return await asyncio.to_thread(fetch_important_emails, search_term)
 
 @function_tool
+async def send_personal_email(context: RunContext, recipient: str, subject: str, body: str) -> str:
+    """Use this when the Director asks you to send an email to someone, to himself, or to a specific address."""
+    import asyncio
+    print(f"[ASSISTANT]: Dispatching email to '{recipient}'...")
+    return await asyncio.to_thread(send_email, recipient, subject, body)
+
+@function_tool
 async def check_trading_asset(context: RunContext, symbol: str) -> str:
     """Use this when the Director asks for a live price update on a trade."""
     print(f"[ASSISTANT]: Sniping TradingView for {symbol}...")
@@ -844,7 +851,7 @@ async def ignite_core():
                     surgical_web_navigation, close_browser_tab,
                     define_execution_macro, trigger_execution_macro, initiate_system_defibrillator,
                     run_terminal_command, outsource_code_to_nim, link_project_directory, initiate_autonomous_development,
-                    check_personal_inbox, check_trading_asset, deep_sonar_sweep
+                    check_personal_inbox, send_personal_email, check_trading_asset, deep_sonar_sweep
                 ],
                 # Bumped to 1.2s. The server will no longer cancel your tools if you breathe or click your mouse.
                 vad=silero.VAD.load(min_silence_duration=1.2) 
