@@ -19,3 +19,32 @@ body {
 .hud-glow {
   text-shadow: 0 0 8px rgba(0, 255, 204, 0.6);
 }
+
+/* THE CYAN BLOOM */
+.tactical-glow {
+  text-shadow: 0 0 4px rgba(0, 255, 240, 0.8), 0 0 10px rgba(0, 255, 240, 0.3);
+}
+
+/* THE HOLOGRAPHIC FLICKER */
+@keyframes neural-flicker {
+  0% { opacity: 0.95; }
+  4% { opacity: 0.50; }
+  8% { opacity: 0.95; }
+  100% { opacity: 1; }
+}
+.animate-flicker {
+  animation: neural-flicker 8s infinite;
+}
+
+/* THE DIGITAL SCANLINES */
+.scanlines {
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 240, 0.03) 2px,
+    rgba(0, 255, 240, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 100;
+}

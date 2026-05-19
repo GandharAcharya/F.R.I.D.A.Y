@@ -130,6 +130,9 @@ export default function FridayOS() {
   return (
     <div className="h-screen w-screen bg-[#020202] text-[#00ffcc] flex flex-col p-6 overflow-hidden font-mono relative">
 
+      {/* GLOBAL TACTICAL SCANLINES */}
+      <div className="absolute inset-0 scanlines"></div>
+
       {/* GLOBAL RADIAL HUD OVERLAY */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden z-0 opacity-10">
           <div className="w-[150vw] h-[150vw] border-[1px] border-[#00ffcc] rounded-full absolute animate-spin-slow"></div>
@@ -144,8 +147,8 @@ export default function FridayOS() {
       <div className="flex justify-between items-center border-b border-[#00ffcc]/40 pb-5 mb-6 relative">
         <div className="flex gap-4 items-center">
           <Layers3 size={32} className="text-[#00ffcc]" />
-          <h1 className="text-3xl font-bold tracking-[0.2em] text-white">
-            F.R.I.D.A.Y. <span className='text-[#00ffcc]'>OMNISCIENCE HUD</span>
+          <h1 className="text-3xl font-light tracking-[0.3em] text-[#00ffcc] tactical-glow animate-flicker">
+            F.R.I.D.A.Y. <span className='text-white'>OMNISCIENCE HUD</span>
           </h1>
         </div>
         <div className="flex gap-6 text-xs text-center border border-[#00ffcc]/30 p-2 rounded-sm bg-[#111]">
