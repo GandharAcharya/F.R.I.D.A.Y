@@ -8,9 +8,29 @@ import requests
 import pygetwindow as gw
 import psutil
 import asyncio
+import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 # Force the system to allow up to 32 parallel threads instead of the default 4
 asyncio.get_event_loop().set_default_executor(ThreadPoolExecutor(max_workers=32))
+
+def boot_react_hud():
+    """Silently boots the React OS and opens the browser."""
+    print("[IGNITION]: Spinning up React Visual OS in the background...")
+    ui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "friday-os")
+    
+    # Run the Vite server invisibly
+    subprocess.Popen(
+        "npm run dev", 
+        cwd=ui_path, 
+        shell=True, 
+        stdout=subprocess.DEVNULL, 
+        stderr=subprocess.DEVNULL
+    )
+    
+    # Give Vite 3 seconds to boot, then pop the browser
+    time.sleep(3)
+    print("[IGNITION]: HUD Online. Opening neural interface...")
+    webbrowser.open("http://localhost:5173")
 
 # Set the brutalist aesthetic you requested
 ctk.set_appearance_mode("dark")
@@ -230,5 +250,12 @@ class FridayHUD(ctk.CTk):
         self.log("System powered down.")
 
 if __name__ == "__main__":
+    # 1. Purge old React instances to prevent Port 8000 collisions
+    os.system("taskkill /F /IM node.exe >nul 2>&1")
+    
+    # 2. Fire the UI Bootloader in a background thread
+    ui_thread = threading.Thread(target=boot_react_hud, daemon=True)
+    ui_thread.start()
+
     app = FridayHUD()
     app.mainloop()
