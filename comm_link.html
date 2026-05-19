@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>F.R.I.D.A.Y. Visual Cortex</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #050505;
+            color: #00ffff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* THE RADIAL HUD CORE */
+        .hud-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        /* Inner Core */
+        .core {
+            width: 100px;
+            height: 100px;
+            background: radial-gradient(circle, #00ffff 10%, #005555 70%, transparent 100%);
+            border-radius: 50%;
+            box-shadow: 0 0 40px #00ffff, inset 0 0 20px #00ffff;
+            animation: pulse 2s infinite alternate;
+            z-index: 10;
+        }
+
+        /* Outer Ring 1 (Clockwise) */
+        .ring-1 {
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            border: 2px solid transparent;
+            border-top: 2px solid #00ffff;
+            border-bottom: 2px solid #00ffff;
+            border-radius: 50%;
+            animation: spin 8s linear infinite;
+        }
+
+        /* Outer Ring 2 (Counter-Clockwise) */
+        .ring-2 {
+            position: absolute;
+            width: 260px;
+            height: 260px;
+            border: 1px dashed rgba(0, 255, 255, 0.5);
+            border-radius: 50%;
+            animation: spin-reverse 15s linear infinite;
+        }
+
+        /* Outer Ring 3 (Data Track) */
+        .ring-3 {
+            position: absolute;
+            width: 280px;
+            height: 280px;
+            border: 2px solid transparent;
+            border-left: 3px solid rgba(0, 255, 255, 0.8);
+            border-right: 3px solid rgba(0, 255, 255, 0.8);
+            border-radius: 50%;
+            animation: spin 12s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+        }
+
+        /* TEXT AND STATUS */
+        .status-box {
+            text-align: center;
+            letter-spacing: 2px;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin: 0 0 10px 0;
+            text-shadow: 0 0 10px #00ffff;
+        }
+
+        p {
+            font-size: 14px;
+            color: #55aaaa;
+            margin: 0;
+        }
+
+        /* ANIMATIONS */
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                opacity: 0.8;
+                box-shadow: 0 0 20px #00ffff;
+            }
+
+            100% {
+                transform: scale(1.05);
+                opacity: 1;
+                box-shadow: 0 0 60px #00ffff;
+            }
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes spin-reverse {
+            100% {
+                transform: rotate(-360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="hud-container">
+        <div class="ring-3"></div>
+        <div class="ring-2"></div>
+        <div class="ring-1"></div>
+        <div class="core"></div>
+    </div>
+
+    <div class="status-box">
+        <h1>F.R.I.D.A.Y. MARK IV</h1>
+        <p id="status">Initializing Uplink...</p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <script>
+        async function igniteBridge() {
+            const params = new URLSearchParams(window.location.search);
+            const wsUrl = params.get('url');
+            const token = params.get('token');
+
+            if (!wsUrl || !token) {
+                document.getElementById('status').innerText = "ERROR: Missing security tokens.";
+                return;
+            }
+
+            const room = new LivekitClient.Room();
+
+            room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+                if (track.kind === 'audio') {
+                    const audioElement = track.attach();
+                    document.body.appendChild(audioElement);
+                }
+            });
+
+            try {
+                await room.connect(wsUrl, token);
+
+                const audioTrack = await LivekitClient.createLocalAudioTrack({
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    channelCount: 1
+                });
+                await room.localParticipant.publishTrack(audioTrack);
+
+                document.getElementById('status').innerText = "BRIDGE SECURED. LISTENING.";
+                document.getElementById('status').style.color = "#00ffff";
+            } catch (e) {
+                document.getElementById('status').innerText = "CONNECTION FAILED: " + e.message;
+                document.getElementById('status').style.color = "#ff0000";
+            }
+        }
+        igniteBridge();
+    </script>
+</body>
+
+</html>

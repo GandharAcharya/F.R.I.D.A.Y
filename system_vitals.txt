@@ -1,0 +1,3 @@
+ACTIVE WINDOW: F.R.I.D.A.Y - Antigravity - .env
+CPU USAGE: 1.7%
+RAM USAGE: 29.4%
