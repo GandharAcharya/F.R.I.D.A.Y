@@ -33,10 +33,9 @@ def boot_react_hud():
     webbrowser.open("http://localhost:5173")
     
     # --- THE AUDIO HOTWIRE ---
-    print("[IGNITION]: Booting LiveKit Voice Bridge...")
-    comm_link_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "comm_link.html")
-    formatted_path = comm_link_path.replace('\\', '/')
-    webbrowser.open(f"file:///{formatted_path}")
+    print("[IGNITION]: Booting LiveKit Voice Bridge (Secure Localhost)...")
+    # We now route through the Vite server to bypass browser mic restrictions
+    webbrowser.open("http://localhost:5173/comm_link.html")
     # -------------------------
 
 # Set the brutalist aesthetic you requested

@@ -9,7 +9,11 @@ ACTIVE_SUBAGENTS = set()
 
 # --- THE ENV IGNITION (MUST BE BEFORE CUSTOM IMPORTS) ---
 from dotenv import load_dotenv
-load_dotenv() 
+load_dotenv()
+# FORCE KILL THE POISONED PREFIX BEFORE LIVEKIT BOOTS
+bad_model = os.getenv("GEMINI_LIVE_MODEL", "")
+if bad_model.startswith("models/"):
+    os.environ["GEMINI_LIVE_MODEL"] = bad_model.replace("models/", "")
 
 # --- THE GLOBAL SILENCER ---
 warnings.filterwarnings("ignore", category=ResourceWarning)
@@ -885,8 +889,11 @@ async def ignite_core():
                 vad=silero.VAD.load(min_silence_duration=1.2) 
             )
             
+            # Strip any accidental 'models/' prefixes if they exist in the .env file
+            safe_model_id = GEMINI_LIVE_MODEL.replace("models/", "")
+            
             # Switched voice from Kore to Aoede for a smoother output stream
-            session = AgentSession(llm=RealtimeModel(model=GEMINI_LIVE_MODEL, voice="Aoede", temperature=0.7))
+            session = AgentSession(llm=RealtimeModel(model=safe_model_id, voice="Puck", temperature=0.8))
             await session.start(agent=agent, room=room)
             print("[COGNITIVE CORE]: F.R.I.D.A.Y. is online.")
             await asyncio.Event().wait()
