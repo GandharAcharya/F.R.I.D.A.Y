@@ -31,6 +31,13 @@ def boot_react_hud():
     time.sleep(3)
     print("[IGNITION]: HUD Online. Opening neural interface...")
     webbrowser.open("http://localhost:5173")
+    
+    # --- THE AUDIO HOTWIRE ---
+    print("[IGNITION]: Booting LiveKit Voice Bridge...")
+    comm_link_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "comm_link.html")
+    formatted_path = comm_link_path.replace('\\', '/')
+    webbrowser.open(f"file:///{formatted_path}")
+    # -------------------------
 
 # Set the brutalist aesthetic you requested
 ctk.set_appearance_mode("dark")
