@@ -1,7 +1,9 @@
 import asyncio
 import subprocess
 
-async def execute_ghost_command(command: str, workspace: str = "E:\\F.R.I.D.A.Y\\Workspace") -> str:
+from config import WORKSPACE_ROOT
+
+async def execute_ghost_command(command: str, workspace: str = WORKSPACE_ROOT) -> str:
     """Silently executes a terminal command and catches the output."""
     print(f"\n[TERMINAL GHOST]: Running -> `{command}` in {workspace}")
     

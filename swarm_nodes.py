@@ -22,7 +22,8 @@ def broadcast_status(node_name: str, message: str):
 # 1. THE ISOLATED WORKSPACE GENERATOR
 def get_secure_workspace(project_name: str) -> str:
     """Forces all code into a secure, predictable directory to bypass Windows Desktop/OneDrive bugs."""
-    workspace_path = os.path.join("E:\\F.R.I.D.A.Y\\Workspace", project_name)
+    from config import WORKSPACE_ROOT
+    workspace_path = os.path.join(WORKSPACE_ROOT, project_name)
     if not os.path.exists(workspace_path):
         os.makedirs(workspace_path)
     return workspace_path
@@ -174,7 +175,8 @@ async def deep_scan_project(project_name: str, query: str):
         response = await architect_model.generate_content_async(prompt)
         
         # 3. Save the report and alert the Director
-        report_path = os.path.join("E:\\F.R.I.D.A.Y\\Workspace", f"{project_name}_Analysis_Report.txt")
+        from config import WORKSPACE_ROOT
+        report_path = os.path.join(WORKSPACE_ROOT, f"{project_name}_Analysis_Report.txt")
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(response.text)
             

@@ -7,7 +7,10 @@ pyautogui.FAILSAFE = False
 
 
 class SystemController:
-    def __init__(self, root_dir="E:\\F.R.I.D.A.Y"):
+    def __init__(self, root_dir=None):
+        from config import FRIDAY_ROOT
+        if root_dir is None:
+            root_dir = FRIDAY_ROOT
         print("[SYSTEM] Initializing OS Control API (Safety Sandbox Active)...")
         self.root_dir = root_dir
         
@@ -123,7 +126,8 @@ class SystemController:
         print(f"[OS RADAR]: Scanning for '{filename}'...")
         
         # 1. THE INSTANT WORKSPACE CHECK (Fixes the wrong folder and the 5-minute lag)
-        workspace_guess = os.path.join("E:\\F.R.I.D.A.Y\\Workspace", filename)
+        from config import WORKSPACE_ROOT
+        workspace_guess = os.path.join(WORKSPACE_ROOT, filename)
         if os.path.exists(workspace_guess):
             print("[OS RADAR]: Target found instantly in Workspace.")
             return f"Sonar found targets:\n{workspace_guess}"

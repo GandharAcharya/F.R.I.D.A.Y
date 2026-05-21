@@ -1,9 +1,16 @@
 import os
 import time
 import chromadb
+import threading
+
+from config import MEMORY_VAULT, OBSIDIAN_VAULT
+
+# The Traffic Light
+db_write_lock = threading.Lock()
+
 
 class VectorMemory:
-    def __init__(self, storage_dir="E:\\F.R.I.D.A.Y\\memory_vault", obsidian_dir="E:\\F.R.I.D.A.Y\\Obsidian_Vault"):
+    def __init__(self, storage_dir=MEMORY_VAULT, obsidian_dir=OBSIDIAN_VAULT):
         print("[SYSTEM] Initializing Persistent Vector Memory Matrix (ChromaDB Silo & Obsidian Sync Engine)...")
         self.client = chromadb.PersistentClient(path=storage_dir)
         self.obsidian_dir = obsidian_dir
@@ -30,12 +37,13 @@ class VectorMemory:
         """Stores a unique fact semantically so it can be retrieved by concept, not just exact keywords."""
         memory_id = f"mem_{int(time.time())}"
         try:
-            silo = self._get_silo("general")
-            silo.add(
-                documents=[information],
-                metadatas=[{"category": category, "timestamp": time.time()}],
-                ids=[memory_id]
-            )
+            with db_write_lock:
+                silo = self._get_silo("general")
+                silo.add(
+                    documents=[information],
+                    metadatas=[{"category": category, "timestamp": time.time()}],
+                    ids=[memory_id]
+                )
             return f"Context permanently stamped into Vector Matrix under ID: {memory_id}"
         except Exception as e:
             return f"Memory storage failure: {str(e)}"
@@ -63,16 +71,17 @@ class VectorMemory:
     def journal_workspace_event(self, project_name: str, event_summary: str, associated_file: str = "None") -> str:
         memory_id = f"mem_{int(time.time())}"
         try:
-            silo = self._get_silo(project_name)
-            silo.add(
-                documents=[event_summary],
-                metadatas=[{
-                    "file_path": associated_file, 
-                    "timestamp": time.time(),
-                    "date_string": time.strftime("%Y-%m-%d")
-                }],
-                ids=[memory_id]
-            )
+            with db_write_lock:
+                silo = self._get_silo(project_name)
+                silo.add(
+                    documents=[event_summary],
+                    metadatas=[{
+                        "file_path": associated_file, 
+                        "timestamp": time.time(),
+                        "date_string": time.strftime("%Y-%m-%d")
+                    }],
+                    ids=[memory_id]
+                )
             # Parallel write to the Obsidian Vault
             self._write_to_obsidian(project_name, event_summary, associated_file)
             return f"Event journaled in {project_name} silo and synced to Obsidian."

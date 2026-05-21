@@ -1,8 +1,10 @@
 import os
 import json
 
+from config import REGISTRY_FILE
+
 class ProjectRegistry:
-    def __init__(self, registry_file="E:\\F.R.I.D.A.Y\\project_registry.json"):
+    def __init__(self, registry_file=REGISTRY_FILE):
         self.registry_file = registry_file
         self.registry = self._load_registry()
 

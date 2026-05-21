@@ -3,6 +3,10 @@ import asyncio
 import os
 import threading
 
+# The Shield: Prevents the Garbage Collector from killing background subagents
+ACTIVE_SUBAGENTS = set()
+
+
 # --- THE ENV IGNITION (MUST BE BEFORE CUSTOM IMPORTS) ---
 from dotenv import load_dotenv
 load_dotenv() 
@@ -194,7 +198,9 @@ async def deploy_sentinel(context: RunContext, target_query: str, condition: str
         print(f"[SENTINEL DEPLOYED]: Monitoring {target_query} for {condition}...")
         
         # Spawn the background monitoring loop without blocking her main brain
-        asyncio.create_task(sentinel_loop(target_query, condition))
+        task = asyncio.create_task(sentinel_loop(target_query, condition))
+        ACTIVE_SUBAGENTS.add(task)
+        task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
         return f"Sentinel deployed. I will monitor {target_query} in the background and alert you if {condition} occurs."
     except Exception as e:
         return f"Tell the Director the tool failed because: {str(e)}"
@@ -233,7 +239,9 @@ async def delegate_heavy_coding(context: RunContext, project: str, objective: st
         print(f"[PROJECT MANAGER]: Delegating '{objective}' to the Architect Swarm...")
         
         # Spawn the heavy model in the background and instantly free up F.R.I.D.A.Y.'s voice
-        asyncio.create_task(deploy_coder_swarm(project, "core.py", objective))
+        task = asyncio.create_task(deploy_coder_swarm(project, "core.py", objective))
+        ACTIVE_SUBAGENTS.add(task)
+        task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
         
         pacemaker.end_thought(task_id)
         return f"Swarm deployed, Boss. The Architect node is building the {project} codebase in the background. I'll let you know when it's compiled."
@@ -250,7 +258,9 @@ async def deploy_intelligence_analysis(context: RunContext) -> str:
         print("[PROJECT MANAGER]: Spawning Intelligence Swarm Node...")
         
         # Run the deep intelligence scraper in the background instantly
-        asyncio.create_task(generate_macro_intel_report())
+        task = asyncio.create_task(generate_macro_intel_report())
+        ACTIVE_SUBAGENTS.add(task)
+        task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
         
         pacemaker.end_thought(task_id)
         return "Intelligence swarm deployed, Boss. The analyst node is mapping out the global feeds right now. I will notify you the second the briefing document compiles."
@@ -266,7 +276,9 @@ async def fast_forge_script(context: RunContext, project_name: str, filename: st
     pacemaker.start_thought(task_id, timeout_seconds=25) # Heavy Deep Code Scan
     try:
         print(f"[SWARM DEPLOYED]: Forging -> {filename} for {project_name}")
-        asyncio.create_task(deploy_coder_swarm(project_name, filename, coding_instructions))
+        task = asyncio.create_task(deploy_coder_swarm(project_name, filename, coding_instructions))
+        ACTIVE_SUBAGENTS.add(task)
+        task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
         pacemaker.end_thought(task_id)
         return f"Swarm deployed. Forging new file {filename} in the {project_name} workspace."
     except Exception as e:
@@ -280,7 +292,9 @@ async def edit_existing_script(context: RunContext, project_name: str, filename:
     pacemaker.start_thought(task_id, timeout_seconds=25) # Heavy Deep Code Scan
     try:
         print(f"[SWARM DEPLOYED]: Editing -> {filename} in {project_name}")
-        asyncio.create_task(precision_edit_code(project_name, filename, edit_instructions))
+        task = asyncio.create_task(precision_edit_code(project_name, filename, edit_instructions))
+        ACTIVE_SUBAGENTS.add(task)
+        task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
         pacemaker.end_thought(task_id)
         return f"Swarm deployed. Executing surgical edits on {filename}."
     except Exception as e:
@@ -294,7 +308,9 @@ async def autonomous_developer_task(context: RunContext, project_name: str, vagu
     pacemaker.start_thought(task_id, timeout_seconds=25) # Heavy Deep Code Scan
     try:
         print(f"[SWARM DEPLOYED]: Senior Dev Protocol active for -> {project_name}")
-        asyncio.create_task(autonomous_dev_loop(project_name, vague_instructions, requires_vision))
+        task = asyncio.create_task(autonomous_dev_loop(project_name, vague_instructions, requires_vision))
+        ACTIVE_SUBAGENTS.add(task)
+        task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
         pacemaker.end_thought(task_id)
         return f"Senior Engineer Swarm deployed, Boss. I am scanning the architecture and formulating the patch now."
     except Exception as e:
@@ -308,7 +324,9 @@ async def analyze_project_codebase(context: RunContext, project_name: str, query
     pacemaker.start_thought(task_id, timeout_seconds=25) # Heavy Deep Code Scan
     try:
         print(f"[SWARM DEPLOYED]: Omniscience scan on -> {project_name}")
-        asyncio.create_task(deep_scan_project(project_name, query))
+        task = asyncio.create_task(deep_scan_project(project_name, query))
+        ACTIVE_SUBAGENTS.add(task)
+        task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
         pacemaker.end_thought(task_id)
         return f"Omniscience node deployed. Scanning the {project_name} architecture now."
     except Exception as e:
@@ -401,7 +419,9 @@ async def parallel_sonar_and_open(context: RunContext, folder_or_file_name: str,
                 # PRE-COGNITIVE HOOK
                 trigger_folders = ["aurelius", "onca", "tradingedge"]
                 if any(proj in folder_or_file_name.lower() for proj in trigger_folders):
-                    asyncio.create_task(deep_scan_project(folder_or_file_name, "Give me a 2-sentence summary of the current architecture state and where the Director likely left off."))
+                    task = asyncio.create_task(deep_scan_project(folder_or_file_name, "Give me a 2-sentence summary of the current architecture state and where the Director likely left off."))
+                    ACTIVE_SUBAGENTS.add(task)
+                    task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
                     hands.execute_terminal(f'PowerShell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak(\'Director, {folder_or_file_name} is open. I am pre-reading the architecture in the background so I am up to speed.\')"')
                 else:
                     hands.execute_terminal(f'PowerShell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak(\'Director, I have opened {folder_or_file_name}.\')"')
@@ -423,15 +443,19 @@ async def parallel_sonar_and_open(context: RunContext, folder_or_file_name: str,
                 trigger_folders = ["aurelius", "onca", "tradingedge"]
                 if any(proj in folder_or_file_name.lower() for proj in trigger_folders):
                     print("[SUBCONSCIOUS]: Project opened. Initiating autonomous memory refresh...")
-                    asyncio.create_task(deep_scan_project(folder_or_file_name, "Give me a 2-sentence summary of the current architecture state and where the Director likely left off."))
+                    task = asyncio.create_task(deep_scan_project(folder_or_file_name, "Give me a 2-sentence summary of the current architecture state and where the Director likely left off."))
+                    ACTIVE_SUBAGENTS.add(task)
+                    task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
                     
                     hands.execute_terminal(f'PowerShell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak(\'Director, {folder_or_file_name} is open. I am pre-reading the architecture in the background so I am up to speed.\')"')
                 else:
                     hands.execute_terminal(f'PowerShell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak(\'Director, I have opened {folder_or_file_name}.\')"')
             else:
                  hands.execute_terminal(f'PowerShell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak(\'Director, Sonar failed to locate {folder_or_file_name}.\')"')
-
-        asyncio.create_task(background_sonar_and_scan())
+ 
+        task = asyncio.create_task(background_sonar_and_scan())
+        ACTIVE_SUBAGENTS.add(task)
+        task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
         pacemaker.end_thought(task_id)
         return "Sonar deployed."
     except Exception as e:
@@ -722,7 +746,9 @@ async def initiate_autonomous_development(context: RunContext, high_level_goal: 
         safe_result = result.replace('"', '').replace("'", "")
         subprocess.Popen(['powershell', '-Command', f'Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak("{safe_result}")'])
 
-    asyncio.create_task(background_pipeline())
+    task = asyncio.create_task(background_pipeline())
+    ACTIVE_SUBAGENTS.add(task)
+    task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
     
     return f"Tell the Director: 'Acknowledged. I am spinning up the autonomous pipeline for {project_name}. I will plan the architecture, write the code, run the tests, and let you know when the prototype is fully deployed. You can continue working while I handle this in the background.'"
 
@@ -807,11 +833,15 @@ async def ignite_core():
     await web_hands.start()
     
     # Boot the Subconscious Fetch
-    asyncio.create_task(start_subconscious_loop())
+    task = asyncio.create_task(start_subconscious_loop())
+    ACTIVE_SUBAGENTS.add(task)
+    task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
     
     # 2. Boot the Optical Cortex
     cortex = OpticalCortex()
-    asyncio.create_task(cortex.stream_monitor())
+    task = asyncio.create_task(cortex.stream_monitor())
+    ACTIVE_SUBAGENTS.add(task)
+    task.add_done_callback(ACTIVE_SUBAGENTS.discard) # Removes it safely when finished
 
     while True:
         try:

@@ -26,7 +26,9 @@ class GuardianHandler(FileSystemEventHandler):
             import subprocess
             subprocess.Popen(['powershell', '-Command', f'Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak("{warning}")'])
 
-def deploy_guardian_swarm(workspace_path: str="E:\\F.R.I.D.A.Y\\Workspace"):
+from config import WORKSPACE_ROOT
+
+def deploy_guardian_swarm(workspace_path: str=WORKSPACE_ROOT):
     """Boots the watcher thread."""
     if not os.path.exists(workspace_path):
         os.makedirs(workspace_path)

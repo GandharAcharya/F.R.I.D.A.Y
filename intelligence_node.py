@@ -69,7 +69,8 @@ async def generate_macro_intel_report():
     
     try:
         response = await analyst_brain.generate_content_async(prompt)
-        report_path = os.path.join("E:\\F.R.I.D.A.Y", "macro_intelligence_briefing.txt")
+        from config import INTEL_BRIEFING_FILE
+        report_path = INTEL_BRIEFING_FILE
         
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(response.text)
