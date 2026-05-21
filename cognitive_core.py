@@ -54,7 +54,9 @@ from os_control import SystemController
 
 # Configure the secondary Vision Sub-Agent
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "models/gemini-2.0-flash-exp")
+# The correct model identifier for the realtime/bidiGenerateContent API is gemini-2.0-flash-exp
+# It DOES NOT use the "models/" prefix.
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-exp")
 
 # Initialize the Hippocampus
 brain_db = VectorMemory()

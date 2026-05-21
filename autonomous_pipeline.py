@@ -4,48 +4,34 @@ import re
 import ast
 
 def extract_json_plan(llm_output: str):
+    # Strip all markdown bloat Kimi might have added
+    clean_result = llm_output.replace("```json", "").replace("```python", "").replace("```", "").strip()
+    
+    # (Assuming 'clean_result' is the string you are trying to parse)
     try:
-        # Strip all markdown bloat Kimi might have added
-        clean_result = llm_output.replace("```json", "").replace("```python", "").replace("```", "").strip()
-        
-        # Try native JSON parsing first (The Happy Path)
-        try:
-            parsed = json.loads(clean_result)
-            if isinstance(parsed, list):
-                return parsed
-            elif isinstance(parsed, dict):
-                # If Kimi hallucinates a dictionary, grab the first list it contains
-                for key, value in parsed.items():
-                    if isinstance(value, list):
-                        return value
-        except json.JSONDecodeError:
-            pass # Fall through to aggressive Regex
-
-        # Aggressively hunt for brackets
-        match = re.search(r'\[(.*?)\]', clean_result, re.DOTALL)
-        if match:
-            raw_array_string = "[" + match.group(1) + "]"
-            try:
-                return json.loads(raw_array_string)
-            except json.JSONDecodeError:
-                return ast.literal_eval(raw_array_string)
-        else:
-            # THE ULTIMATE FALLBACK: If Kimi writes a numbered list instead of JSON
-            # This strips numbers, bullets, and spaces from the start of each line
-            lines = [line.lstrip(' -*1234567890.') for line in clean_result.split('\n') if line.strip()]
-            if lines:
-                return lines
-
-        # Force a JSONDecodeError if we couldn't parse it to trigger the fallback check
-        return json.loads(clean_result)
+        tasks = json.loads(clean_result)
     except json.JSONDecodeError:
-        # THE FIX: If it fails, check if the model just ran out of breath
-        if not llm_output.strip().endswith("}") and not llm_output.strip().endswith("]"):
-            print("[PIPELINE WARNING]: LLM output truncated. Generating emergency fix request...")
-            # Here, you would loop back and pass the prompt: "You cut off. Continue exactly from where you stopped."
-            return None 
-        else:
-            raise ValueError("Kimi hallucinates invalid JSON syntax.")
+        print("[PIPELINE WARNING]: LLM hallucinated invalid JSON syntax or truncated output.")
+        # THE FALLBACK: Check if it simply got cut off mid-thought
+        if not clean_result.strip().endswith("}") and not clean_result.strip().endswith("]"):
+            print("[PIPELINE ERROR]: Kimi ran out of output tokens mid-sentence. Pipeline aborting step.")
+            raise ValueError("LLM token limit exceeded. Code generation truncated.")
+        
+        # The Ultimate Fallback: Try to parse it as an AST literal if it's Python-dict formatted
+        import ast
+        try:
+            tasks = ast.literal_eval(clean_result)
+        except Exception:
+            raise ValueError("Total JSON extraction failure.")
+
+    # Ensure it's a list or dictionary we can return
+    if isinstance(tasks, list):
+        return tasks
+    elif isinstance(tasks, dict):
+        for key, value in tasks.items():
+            if isinstance(value, list):
+                return value
+    return tasks
 
 async def run_autonomous_lifecycle(goal: str, project_name: str):
     """The God-Loop: Plans, Executes, Verifies, and Refines until the goal is met."""
