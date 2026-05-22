@@ -755,7 +755,7 @@ async def ignite_core():
             livekit_url = os.getenv("LIVEKIT_URL", "wss://friday-7ywuni04.livekit.cloud")
 
             # ── BUG FIX 1: GEMINI_LIVE_MODEL was None — always fall back to hardcoded string
-            gemini_model = os.getenv("GEMINI_LIVE_MODEL") or "gemini-2.0-flash-exp"
+            gemini_model = os.getenv("GEMINI_LIVE_MODEL") or "gemini-live-2.5-flash-native-audio"
 
             # RealtimeModel is ONLY the voice engine — no instructions here
             model = google_beta.realtime.RealtimeModel(
