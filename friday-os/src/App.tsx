@@ -3,9 +3,8 @@ import ReactFlow, { Background, applyNodeChanges, applyEdgeChanges, MarkerType }
 import type { NodeChange, EdgeChange, Node, Edge } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Terminal, Activity, Eye, Code, Target, Layers3, Radio, MessageSquare, Zap } from 'lucide-react';
-import { Room, RoomEvent } from 'livekit-client';
+import { Room, RoomEvent, ConnectionState } from 'livekit-client';
 
-// --- VISUAL TELEMETRY MODULES ---
 const StatusIndicator = ({ label, icon: Icon, value, status }) => (
   <div className="flex flex-col gap-1 border-l border-[#00ffcc]/30 pl-3">
     <div className="flex items-center gap-2 text-[#00ffcc]/60 text-xs">
@@ -31,46 +30,47 @@ const JarvisCore = () => (
     <div className="absolute inset-2 border-[2px] border-t-transparent border-[#00ffcc]/60 rounded-full animate-spin-reverse"></div>
     <div className="absolute inset-6 border-[4px] border-dotted border-[#00ffcc]/30 rounded-full animate-spin-slow"></div>
     <div className="absolute inset-10 bg-[radial-gradient(circle,_rgba(0,255,204,0.15)_0%,_transparent_70%)] rounded-full flex items-center justify-center animate-pulse">
-        <Radio size={32} className="text-[#00ffcc] hud-glow opacity-80" />
+      <Radio size={32} className="text-[#00ffcc] hud-glow opacity-80" />
     </div>
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-30">
-        <div className="w-full h-[1px] bg-[#00ffcc]"></div>
-        <div className="h-full w-[1px] bg-[#00ffcc] absolute"></div>
+      <div className="w-full h-[1px] bg-[#00ffcc]"></div>
+      <div className="h-full w-[1px] bg-[#00ffcc] absolute"></div>
     </div>
   </div>
 );
 
-// --- NODE TYPES: defined outside component, stable reference forever ---
+// Stable reference — outside component, never recreated
 const nodeTypes = {};
 
-// --- NEURAL ROUTER BASE URL ---
 const ROUTER_URL = import.meta.env.VITE_ROUTER_URL || 'http://localhost:8080';
+const RETRY_DELAY_MS = 5000;
 
-// --- MASTER COMPONENT ---
 export default function FridayOS() {
-  const [logs, setLogs] = useState<string[]>(["MARK VI OMNISCIENCE TERMINAL INITIALIZED", "DECODING SYMBOLIC PROTOCOLS...", "AWAITING CORTEX SYNC..."]);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
-  const [command, setCommand] = useState("");
+  const [logs, setLogs]             = useState<string[]>(["MARK VI OMNISCIENCE TERMINAL INITIALIZED", "DECODING SYMBOLIC PROTOCOLS...", "AWAITING CORTEX SYNC..."]);
+  const [nodes, setNodes]           = useState<Node[]>([]);
+  const [edges, setEdges]           = useState<Edge[]>([]);
+  const [command, setCommand]       = useState("");
   const [voiceStatus, setVoiceStatus] = useState("STANDBY");
-  const ws        = useRef<WebSocket | null>(null);
-  const roomRef   = useRef<Room | null>(null);   // stable ref, never stale
-  const audioRef  = useRef<HTMLAudioElement>(null);
-  const destroyed = useRef(false);               // cleanup guard
 
-  // ─── WEBSOCKET: connects ONCE ──────────────────────────────────────────
+  const ws        = useRef<WebSocket | null>(null);
+  const roomRef   = useRef<Room | null>(null);
+  const audioRef  = useRef<HTMLAudioElement>(null);
+  const destroyed = useRef(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const addLog = useCallback((msg: string) =>
+    setLogs(prev => [...prev, msg]), []);
+
+  // ── WEBSOCKET ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const connect = () => {
       ws.current = new WebSocket(`${ROUTER_URL.replace('http', 'ws')}/ws/cortex`);
-
-      ws.current.onopen = () =>
-        setLogs(prev => [...prev, "[HUD]: Hive Router linked. Real-time telemetry active."]);
-
+      ws.current.onopen  = () => addLog("[HUD]: Hive Router linked. Real-time telemetry active.");
       ws.current.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type === "node_active") {
-            setLogs(prev => [...prev, `[THINKING]: ${data.payload.task}`]);
+            addLog(`[THINKING]: ${data.payload.task}`);
             const id = data.payload.task;
             setNodes(nds => {
               const prev = nds[nds.length - 1];
@@ -86,19 +86,17 @@ export default function FridayOS() {
                   transform: 'skewX(-10deg)'
                 }
               };
-              if (prev) {
+              if (prev)
                 setEdges(eds => [...eds, {
-                  id: `e-${prev.id}-${id}`,
-                  source: prev.id, target: id,
+                  id: `e-${prev.id}-${id}`, source: prev.id, target: id,
                   style: { stroke: '#00ffcc', strokeWidth: 2 },
                   markerEnd: { type: MarkerType.Arrow, color: '#00ffcc' },
                 }]);
-              }
               return [...nds, newNode];
             });
           }
           if (data.type === "node_complete") {
-            setLogs(prev => [...prev, `[COMPLETE]: ${data.payload.task}`]);
+            addLog(`[COMPLETE]: ${data.payload.task}`);
             setNodes(nds => nds.map(n => n.id === data.payload.task
               ? { ...n, style: { ...n.style, borderColor: '#555', color: '#555', boxShadow: 'none' } } : n));
             setEdges(eds => eds.map(e =>
@@ -107,59 +105,83 @@ export default function FridayOS() {
           }
         } catch (_) {}
       };
-
       ws.current.onclose = () => {
-        setLogs(prev => [...prev, "[HUD]: Hive Router disconnected. Reconnecting in 3s..."]);
+        addLog("[HUD]: Hive Router disconnected. Reconnecting in 3s...");
         setTimeout(connect, 3000);
       };
     };
     connect();
     return () => ws.current?.close();
-  }, []);
+  }, [addLog]);
 
-  // ─── LIVEKIT: fetch token once, connect, never double-destroy ──────────────
+  // ── LIVEKIT VOICE — with auto-reconnect ────────────────────────────────────
   useEffect(() => {
     destroyed.current = false;
 
     const bootVoice = async () => {
-      try {
-        setLogs(prev => [...prev, "[COMM]: Requesting voice token from Neural Router..."]);
-        const res          = await fetch(`${ROUTER_URL}/livekit-token`);
-        const { token, url, error } = await res.json();
+      // Clear any pending retry
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      if (destroyed.current) return;
 
-        // Abort if cleanup already fired before fetch resolved
+      // Tear down any existing room before creating a new one
+      if (roomRef.current) {
+        roomRef.current.removeAllListeners();
+        await roomRef.current.disconnect();
+        roomRef.current = null;
+      }
+
+      try {
+        addLog("[COMM]: Requesting voice token from Neural Router...");
+
+        // Wait for neural_router to be ready (cognitive_core boots it)
+        const res = await fetch(`${ROUTER_URL}/livekit-token`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { token, url, error } = await res.json();
         if (destroyed.current) return;
 
         if (error || !token) {
-          setLogs(prev => [...prev, `[COMM ERROR]: Token fetch failed — ${error || 'empty token'}.`]);
+          addLog(`[COMM ERROR]: Token fetch failed — ${error || 'empty token'}. Retrying in 5s...`);
+          retryTimer.current = setTimeout(bootVoice, RETRY_DELAY_MS);
           return;
         }
 
-        const lkRoom = new Room();
+        const lkRoom = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
         roomRef.current = lkRoom;
 
         lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
           if (track.kind === 'audio' && audioRef.current) {
             track.attach(audioRef.current);
             setVoiceStatus('LIVE');
-            setLogs(prev => [...prev, "[COMM]: Neural voice link established. F.R.I.D.A.Y. is online."]);
+            addLog("[COMM]: Neural voice link established. F.R.I.D.A.Y. is online.");
           }
         });
 
         lkRoom.on(RoomEvent.Disconnected, () => {
-          setVoiceStatus('SEVERED');
-          setLogs(prev => [...prev, "[COMM]: Voice link disconnected."]);
+          if (destroyed.current) return;   // intentional shutdown — don't retry
+          setVoiceStatus('RECONNECTING');
+          addLog("[COMM]: Voice link dropped. Reconnecting in 5s...");
+          retryTimer.current = setTimeout(bootVoice, RETRY_DELAY_MS);
+        });
+
+        lkRoom.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
+          if (state === ConnectionState.Connected) {
+            addLog(`[COMM]: Room joined as director_hud.`);
+          }
         });
 
         await lkRoom.connect(url, token, { autoSubscribe: true });
         if (destroyed.current) { lkRoom.disconnect(); return; }
 
         await lkRoom.localParticipant.setMicrophoneEnabled(true);
-        setLogs(prev => [...prev, "[COMM]: Microphone armed. Speak to F.R.I.D.A.Y."]);
+        addLog("[COMM]: Microphone armed. Speak to F.R.I.D.A.Y.");
 
       } catch (err: any) {
-        if (!destroyed.current)
-          setLogs(prev => [...prev, `[COMM ERROR]: ${err.message}`]);
+        if (destroyed.current) return;
+        addLog(`[COMM ERROR]: ${err.message} — retrying in 5s...`);
+        retryTimer.current = setTimeout(bootVoice, RETRY_DELAY_MS);
       }
     };
 
@@ -167,30 +189,33 @@ export default function FridayOS() {
 
     return () => {
       destroyed.current = true;
+      if (retryTimer.current) clearTimeout(retryTimer.current);
       roomRef.current?.disconnect();
       roomRef.current = null;
     };
-  }, []);
+  }, [addLog]);
 
   const handleCommand = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && command.trim() !== '') {
-      setLogs(prev => [...prev, `[DIRECTOR]: ${command}`]);
+    if (e.key === 'Enter' && command.trim()) {
+      addLog(`[DIRECTOR]: ${command}`);
       ws.current?.send(command);
       setCommand("");
     }
   };
 
-  const onNodesChange = useCallback((changes: NodeChange[]) => setNodes(nds => applyNodeChanges(changes, nds)), []);
-  const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges(eds => applyEdgeChanges(changes, eds)), []);
+  const onNodesChange = useCallback((changes: NodeChange[]) =>
+    setNodes(nds => applyNodeChanges(changes, nds)), []);
+  const onEdgesChange = useCallback((changes: EdgeChange[]) =>
+    setEdges(eds => applyEdgeChanges(changes, eds)), []);
 
   return (
     <div className="h-screen w-screen bg-[#020202] text-[#00ffcc] flex flex-col p-6 overflow-hidden font-mono relative">
       <audio ref={audioRef} autoPlay />
       <div className="absolute inset-0 scanlines"></div>
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden z-0 opacity-10">
-          <div className="w-[150vw] h-[150vw] border-[1px] border-[#00ffcc] rounded-full absolute animate-spin-slow"></div>
-          <div className="w-[100vw] h-[100vw] border-[2px] border-dashed border-[#00ffcc] rounded-full absolute animate-spin-reverse"></div>
-          <div className="w-[50vw] h-[50vw] border-[1px] border-[#00ffcc] rounded-full absolute"></div>
+        <div className="w-[150vw] h-[150vw] border-[1px] border-[#00ffcc] rounded-full absolute animate-spin-slow"></div>
+        <div className="w-[100vw] h-[100vw] border-[2px] border-dashed border-[#00ffcc] rounded-full absolute animate-spin-reverse"></div>
+        <div className="w-[50vw] h-[50vw] border-[1px] border-[#00ffcc] rounded-full absolute"></div>
       </div>
       <div className="absolute inset-0 bg-[url('/hex_bg.png')] opacity-10 pointer-events-none"></div>
 
@@ -203,12 +228,15 @@ export default function FridayOS() {
           </h1>
         </div>
         <div className="flex gap-6 text-xs text-center border border-[#00ffcc]/30 p-2 rounded-sm bg-[#111]">
-          <StatusIndicator label="SYSTEM LOAD" icon={Activity} value="NORMAL" status="nominal" />
-          <StatusIndicator label="CORTEX STATUS" icon={Layers3} value="LINKED" status="nominal" />
-          <StatusIndicator label="NIM CLUSTER" icon={Code} value="STANDBY" status="nominal" />
-          <StatusIndicator label="VOICE LINK" icon={Eye} value={voiceStatus} status={voiceStatus === 'LIVE' ? 'nominal' : 'warning'} />
+          <StatusIndicator label="SYSTEM LOAD"   icon={Activity} value="NORMAL"      status="nominal" />
+          <StatusIndicator label="CORTEX STATUS" icon={Layers3}  value="LINKED"      status="nominal" />
+          <StatusIndicator label="NIM CLUSTER"   icon={Code}     value="STANDBY"     status="nominal" />
+          <StatusIndicator label="VOICE LINK"    icon={Eye}      value={voiceStatus}
+            status={voiceStatus === 'LIVE' ? 'nominal' : 'warning'} />
         </div>
-        <div className="absolute top-0 right-0 p-2 text-[8px] text-[#00ffcc]/40 bg-black/50 tracking-widest">{`[ BUILD: MARK_VI_OS_HUD ] [ DIRECTOR_GANDHAR_ACHARYA ]`}</div>
+        <div className="absolute top-0 right-0 p-2 text-[8px] text-[#00ffcc]/40 bg-black/50 tracking-widest">
+          {`[ BUILD: MARK_VI_OS_HUD ] [ DIRECTOR_GANDHAR_ACHARYA ]`}
+        </div>
       </div>
 
       <div className="flex flex-1 gap-6 overflow-hidden relative">
@@ -219,8 +247,9 @@ export default function FridayOS() {
             <div className="text-xs opacity-70">ACTIVE PROTOCOLS: {nodes.length}</div>
           </div>
           <div className="flex-1 relative">
-            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange} nodeTypes={nodeTypes} fitView className="dark">
+            <ReactFlow nodes={nodes} edges={edges}
+              onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+              nodeTypes={nodeTypes} fitView className="dark">
               <Background color="#00ffcc" gap={20} size={1} style={{ opacity: 0.05 }} />
             </ReactFlow>
           </div>
