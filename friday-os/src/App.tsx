@@ -40,7 +40,7 @@ const JarvisCore = () => (
   </div>
 );
 
-// --- NODE TYPES (defined OUTSIDE component to prevent React Flow warning) ---
+// --- NODE TYPES: defined outside component, stable reference forever ---
 const nodeTypes = {};
 
 // --- NEURAL ROUTER BASE URL ---
@@ -53,28 +53,27 @@ export default function FridayOS() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [command, setCommand] = useState("");
   const [voiceStatus, setVoiceStatus] = useState("STANDBY");
-  const ws   = useRef<WebSocket | null>(null);
-  const room = useRef<Room | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const ws        = useRef<WebSocket | null>(null);
+  const roomRef   = useRef<Room | null>(null);   // stable ref, never stale
+  const audioRef  = useRef<HTMLAudioElement>(null);
+  const destroyed = useRef(false);               // cleanup guard
 
-  // ─── WEBSOCKET: connects ONCE ─────────────────────────────────────────────
+  // ─── WEBSOCKET: connects ONCE ──────────────────────────────────────────
   useEffect(() => {
     const connect = () => {
       ws.current = new WebSocket(`${ROUTER_URL.replace('http', 'ws')}/ws/cortex`);
 
-      ws.current.onopen = () => {
+      ws.current.onopen = () =>
         setLogs(prev => [...prev, "[HUD]: Hive Router linked. Real-time telemetry active."]);
-      };
 
       ws.current.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-
           if (data.type === "node_active") {
             setLogs(prev => [...prev, `[THINKING]: ${data.payload.task}`]);
             const id = data.payload.task;
             setNodes(nds => {
-              const previousNode = nds[nds.length - 1];
+              const prev = nds[nds.length - 1];
               const newNode: Node = {
                 id,
                 position: { x: (Math.random() * 300) + 50, y: (nds.length * 100) + 50 },
@@ -87,10 +86,10 @@ export default function FridayOS() {
                   transform: 'skewX(-10deg)'
                 }
               };
-              if (previousNode) {
+              if (prev) {
                 setEdges(eds => [...eds, {
-                  id: `e-${previousNode.id}-${id}`,
-                  source: previousNode.id, target: id,
+                  id: `e-${prev.id}-${id}`,
+                  source: prev.id, target: id,
                   style: { stroke: '#00ffcc', strokeWidth: 2 },
                   markerEnd: { type: MarkerType.Arrow, color: '#00ffcc' },
                 }]);
@@ -98,7 +97,6 @@ export default function FridayOS() {
               return [...nds, newNode];
             });
           }
-
           if (data.type === "node_complete") {
             setLogs(prev => [...prev, `[COMPLETE]: ${data.payload.task}`]);
             setNodes(nds => nds.map(n => n.id === data.payload.task
@@ -115,29 +113,30 @@ export default function FridayOS() {
         setTimeout(connect, 3000);
       };
     };
-
     connect();
     return () => ws.current?.close();
   }, []);
 
-  // ─── LIVEKIT: fetch fresh token from neural_router, then connect ──────────
+  // ─── LIVEKIT: fetch token once, connect, never double-destroy ──────────────
   useEffect(() => {
-    let lkRoom: Room;
+    destroyed.current = false;
 
     const bootVoice = async () => {
       try {
         setLogs(prev => [...prev, "[COMM]: Requesting voice token from Neural Router..."]);
-
-        const res = await fetch(`${ROUTER_URL}/livekit-token`);
+        const res          = await fetch(`${ROUTER_URL}/livekit-token`);
         const { token, url, error } = await res.json();
 
+        // Abort if cleanup already fired before fetch resolved
+        if (destroyed.current) return;
+
         if (error || !token) {
-          setLogs(prev => [...prev, `[COMM ERROR]: Token fetch failed — ${error || 'empty token'}. Check .env LIVEKIT_API_KEY/SECRET.`]);
+          setLogs(prev => [...prev, `[COMM ERROR]: Token fetch failed — ${error || 'empty token'}.`]);
           return;
         }
 
-        lkRoom = new Room();
-        room.current = lkRoom;
+        const lkRoom = new Room();
+        roomRef.current = lkRoom;
 
         lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
           if (track.kind === 'audio' && audioRef.current) {
@@ -153,16 +152,24 @@ export default function FridayOS() {
         });
 
         await lkRoom.connect(url, token, { autoSubscribe: true });
+        if (destroyed.current) { lkRoom.disconnect(); return; }
+
         await lkRoom.localParticipant.setMicrophoneEnabled(true);
         setLogs(prev => [...prev, "[COMM]: Microphone armed. Speak to F.R.I.D.A.Y."]);
 
       } catch (err: any) {
-        setLogs(prev => [...prev, `[COMM ERROR]: ${err.message}`]);
+        if (!destroyed.current)
+          setLogs(prev => [...prev, `[COMM ERROR]: ${err.message}`]);
       }
     };
 
     bootVoice();
-    return () => { lkRoom?.disconnect(); };
+
+    return () => {
+      destroyed.current = true;
+      roomRef.current?.disconnect();
+      roomRef.current = null;
+    };
   }, []);
 
   const handleCommand = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -173,28 +180,21 @@ export default function FridayOS() {
     }
   };
 
-  const onNodesChange = useCallback((changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
-  const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
+  const onNodesChange = useCallback((changes: NodeChange[]) => setNodes(nds => applyNodeChanges(changes, nds)), []);
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges(eds => applyEdgeChanges(changes, eds)), []);
 
   return (
     <div className="h-screen w-screen bg-[#020202] text-[#00ffcc] flex flex-col p-6 overflow-hidden font-mono relative">
-      {/* Hidden audio element for F.R.I.D.A.Y.'s voice */}
       <audio ref={audioRef} autoPlay />
-
-      {/* GLOBAL TACTICAL SCANLINES */}
       <div className="absolute inset-0 scanlines"></div>
-
-      {/* GLOBAL RADIAL HUD OVERLAY */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden z-0 opacity-10">
           <div className="w-[150vw] h-[150vw] border-[1px] border-[#00ffcc] rounded-full absolute animate-spin-slow"></div>
           <div className="w-[100vw] h-[100vw] border-[2px] border-dashed border-[#00ffcc] rounded-full absolute animate-spin-reverse"></div>
           <div className="w-[50vw] h-[50vw] border-[1px] border-[#00ffcc] rounded-full absolute"></div>
       </div>
-
-      {/* BACKGROUND HEX LAYER */}
       <div className="absolute inset-0 bg-[url('/hex_bg.png')] opacity-10 pointer-events-none"></div>
 
-      {/* HEADER SECTION */}
+      {/* HEADER */}
       <div className="flex justify-between items-center border-b border-[#00ffcc]/40 pb-5 mb-6 relative">
         <div className="flex gap-4 items-center">
           <Layers3 size={32} className="text-[#00ffcc]" />
@@ -212,36 +212,26 @@ export default function FridayOS() {
       </div>
 
       <div className="flex flex-1 gap-6 overflow-hidden relative">
-
-        {/* LEFT PANEL: COGNITIVE GEOMETRY */}
+        {/* LEFT: COGNITIVE GEOMETRY */}
         <div className="w-1/2 relative overflow-hidden flex flex-col p-1 rounded-3xl bg-black/20 backdrop-blur-md border border-[#00ffcc]/10 shadow-[0_0_30px_rgba(0,255,204,0.05)_inset]">
           <div className="bg-[#111] p-3 text-sm tracking-[0.2em] font-bold border border-[#00ffcc]/30 flex items-center justify-between">
             <div className="flex items-center gap-3"><Activity size={16} /> COGNITIVE NODE TRAJECTORY</div>
             <div className="text-xs opacity-70">ACTIVE PROTOCOLS: {nodes.length}</div>
           </div>
           <div className="flex-1 relative">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              nodeTypes={nodeTypes}
-              fitView
-              className="dark"
-            >
+            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange} nodeTypes={nodeTypes} fitView className="dark">
               <Background color="#00ffcc" gap={20} size={1} style={{ opacity: 0.05 }} />
             </ReactFlow>
           </div>
           <div className="absolute bottom-4 left-4 p-2 bg-black/70 border border-[#00ffcc]/30 text-xs tracking-wider opacity-60">
-            {`X:${nodes[nodes.length - 1]?.position?.x.toFixed(2) || '--'} Y:${nodes[nodes.length - 1]?.position?.y.toFixed(2) || '--'} [TRACE_ACTIVE]`}
+            {`X:${nodes[nodes.length-1]?.position?.x.toFixed(2)||'--'} Y:${nodes[nodes.length-1]?.position?.y.toFixed(2)||'--'} [TRACE_ACTIVE]`}
           </div>
           <div className="absolute top-16 right-4 p-2 opacity-50"><TelemetryScanner /></div>
         </div>
 
-        {/* RIGHT PANEL: RECEPTION & LOGS */}
+        {/* RIGHT: RECEPTION & LOGS */}
         <div className="w-1/2 flex flex-col gap-6">
-
-          {/* RECEPTION & COGNITIVE WAVEFORM */}
           <div className="h-1/2 relative overflow-hidden flex flex-col p-1 rounded-3xl bg-black/20 backdrop-blur-md border border-[#00ffcc]/10 shadow-[0_0_30px_rgba(0,255,204,0.05)_inset]">
             <div className="bg-[#111] p-3 text-sm tracking-[0.2em] font-bold border border-[#00ffcc]/30 flex items-center gap-3">
               <Eye size={16} /> COGNITIVE FEED & WAVEFORM
@@ -262,7 +252,6 @@ export default function FridayOS() {
             </div>
           </div>
 
-          {/* AUDIT LOGS & DENSE DATA */}
           <div className="h-1/2 relative overflow-hidden flex flex-col p-1 rounded-3xl bg-black/20 backdrop-blur-md border border-[#00ffcc]/10 shadow-[0_0_30px_rgba(0,255,204,0.05)_inset]">
             <div className="bg-[#111] p-3 text-sm tracking-[0.2em] font-bold border border-[#00ffcc]/30 flex items-center gap-3">
               <Terminal size={16} /> SYSTEM AUDIT & DENSE DATA MATRIX
@@ -270,15 +259,13 @@ export default function FridayOS() {
             <div className="flex-1 p-5 overflow-y-auto text-xs opacity-80 flex flex-col gap-1.5 leading-relaxed relative z-10">
               {logs.map((log, i) => (
                 <div key={i} className={
-                  log.includes('[FATAL]') ? 'text-red-500 font-bold' :
+                  log.includes('[FATAL]')      ? 'text-red-500 font-bold' :
                   log.includes('[COMM ERROR]') ? 'text-red-400' :
-                  log.includes('[DIRECTOR]') ? 'text-white' :
-                  log.includes('[COMPLETE]') ? 'text-[#00ffcc]/60' :
-                  log.includes('[COMM]') ? 'text-yellow-300' :
+                  log.includes('[DIRECTOR]')   ? 'text-white' :
+                  log.includes('[COMPLETE]')   ? 'text-[#00ffcc]/60' :
+                  log.includes('[COMM]')       ? 'text-yellow-300' :
                   'text-[#00ffcc]'
-                }>
-                  {`> ${log}`}
-                </div>
+                }>{`> ${log}`}</div>
               ))}
             </div>
             <div className="absolute inset-0 p-5 font-mono text-[9px] text-[#00ffcc]/10 overflow-hidden leading-none z-0 tracking-tight select-none opacity-40">
@@ -287,7 +274,6 @@ export default function FridayOS() {
               {Array(20).fill(' MATRIX_SCAN__'.repeat(10)).join('\n')}
             </div>
           </div>
-
         </div>
       </div>
 
@@ -295,17 +281,12 @@ export default function FridayOS() {
       <div className="mt-6 pt-5 border-t-2 border-[#00ffcc]/40 flex items-center gap-5 relative bg-[#111] p-3 rounded-sm">
         <MessageSquare size={20} className="text-[#00ffcc]" />
         <span className="text-[#00ffcc] font-bold text-xl tracking-widest">{">"}</span>
-        <input
-          type="text"
-          value={command}
-          onChange={(e) => setCommand(e.target.value)}
+        <input type="text" value={command} onChange={e => setCommand(e.target.value)}
           onKeyDown={handleCommand}
           className="flex-1 bg-transparent border-none outline-none text-white tracking-widest text-lg font-bold placeholder-[#00ffcc]/40"
-          placeholder="ENTER DIRECTIVE PROTOCOL OR AWAIT VOICE INPUT..."
-        />
+          placeholder="ENTER DIRECTIVE PROTOCOL OR AWAIT VOICE INPUT..." />
         <Zap size={20} className="text-[#00ffcc] opacity-70" />
       </div>
-
     </div>
   );
 }
