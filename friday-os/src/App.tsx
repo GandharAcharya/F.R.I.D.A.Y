@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import ReactFlow, { Background, Controls, applyNodeChanges, applyEdgeChanges, MarkerType } from 'reactflow';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import ReactFlow, { Background, applyNodeChanges, applyEdgeChanges, MarkerType } from 'reactflow';
 import type { NodeChange, EdgeChange, Node, Edge } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Terminal, Activity, Eye, Code, Target, Layers3, Radio, MessageSquare, Zap } from 'lucide-react';
+import { Room, RoomEvent } from 'livekit-client';
 
 // --- VISUAL TELEMETRY MODULES ---
 const StatusIndicator = ({ label, icon: Icon, value, status }) => (
@@ -26,17 +27,12 @@ const TelemetryScanner = () => (
 
 const JarvisCore = () => (
   <div className="relative w-48 h-48 flex items-center justify-center scale-90">
-    {/* Outer Dashed Ring */}
     <div className="absolute inset-0 border-[1px] border-dashed border-[#00ffcc]/40 rounded-full animate-spin-slow"></div>
-    {/* Middle Solid Ring */}
     <div className="absolute inset-2 border-[2px] border-t-transparent border-[#00ffcc]/60 rounded-full animate-spin-reverse"></div>
-    {/* Inner Data Ring */}
     <div className="absolute inset-6 border-[4px] border-dotted border-[#00ffcc]/30 rounded-full animate-spin-slow"></div>
-    {/* Center Core */}
     <div className="absolute inset-10 bg-[radial-gradient(circle,_rgba(0,255,204,0.15)_0%,_transparent_70%)] rounded-full flex items-center justify-center animate-pulse">
         <Radio size={32} className="text-[#00ffcc] hud-glow opacity-80" />
     </div>
-    {/* Static Crosshairs */}
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-30">
         <div className="w-full h-[1px] bg-[#00ffcc]"></div>
         <div className="h-full w-[1px] bg-[#00ffcc] absolute"></div>
@@ -44,6 +40,12 @@ const JarvisCore = () => (
   </div>
 );
 
+// --- NODE TYPES (defined OUTSIDE component to prevent React Flow warning) ---
+const nodeTypes = {};
+
+// --- LIVEKIT CONFIG (reads from .env or falls back to hardcoded values) ---
+const LIVEKIT_URL   = import.meta.env.VITE_LIVEKIT_URL   || 'wss://friday-7ywuni04.livekit.cloud';
+const LIVEKIT_TOKEN = import.meta.env.VITE_LIVEKIT_TOKEN || '';
 
 // --- MASTER COMPONENT ---
 export default function FridayOS() {
@@ -51,69 +53,104 @@ export default function FridayOS() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [command, setCommand] = useState("");
-  const ws = useRef<WebSocket | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState("STANDBY");
+  const ws  = useRef<WebSocket | null>(null);
+  const room = useRef<Room | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
-  // --- WEBSOCKET NEURAL LINK ---
+  // ─── FIX 1: WebSocket connects ONCE (empty dep array), not on every node add ───
   useEffect(() => {
-    ws.current = new WebSocket("ws://localhost:8080/ws/cortex");
+    const connect = () => {
+      ws.current = new WebSocket("ws://localhost:8080/ws/cortex");
 
-    ws.current.onopen = () => {
-      setLogs(prev => [...prev, "[SYSTEM]: WebRTC & WebSocket Synced. F.R.I.D.A.Y. is online.", "ESTABLISHING OMNISCIENT PROTOCOL..."]);
-    };
+      ws.current.onopen = () => {
+        setLogs(prev => [...prev, "[HUD]: Hive Router linked. Real-time telemetry active."]);
+      };
 
-    ws.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      ws.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
 
-      // Handle her thoughts and spawn visual nodes
-      if (data.type === "node_active") {
-        setLogs(prev => [...prev, `[THINKING]: ${data.payload.task}`]);
-        const id = data.payload.task;
-        const previousNode = nodes[nodes.length - 1];
-
-        setNodes(nds => [
-          ...nds,
-          {
-            id: id,
-            position: { x: (Math.random() * 300) + 50, y: (nodes.length * 100) + 50 }, // Simple vertical stack for flow
-            data: { label: `⚡ ${data.payload.task.toUpperCase()}` },
-            style: {
-              backgroundColor: 'transparent',
-              color: '#00ffcc',
-              border: '1px solid rgba(0,255,204,0.3)',
-              borderRadius: '0px',
-              padding: '12px',
-              fontSize: '11px',
-              letterSpacing: '1px',
-              fontWeight: 'bold',
-              boxShadow: '0 0 10px rgba(0,255,204,0.5)',
-              transform: 'skewX(-10deg)' // skewed aesthetic
-            }
+          if (data.type === "node_active") {
+            setLogs(prev => [...prev, `[THINKING]: ${data.payload.task}`]);
+            const id = data.payload.task;
+            setNodes(nds => {
+              const previousNode = nds[nds.length - 1];
+              const newNode: Node = {
+                id,
+                position: { x: (Math.random() * 300) + 50, y: (nds.length * 100) + 50 },
+                data: { label: `⚡ ${id.toUpperCase()}` },
+                style: {
+                  backgroundColor: 'transparent', color: '#00ffcc',
+                  border: '1px solid rgba(0,255,204,0.3)', borderRadius: '0px',
+                  padding: '12px', fontSize: '11px', letterSpacing: '1px',
+                  fontWeight: 'bold', boxShadow: '0 0 10px rgba(0,255,204,0.5)',
+                  transform: 'skewX(-10deg)'
+                }
+              };
+              if (previousNode) {
+                setEdges(eds => [...eds, {
+                  id: `e-${previousNode.id}-${id}`,
+                  source: previousNode.id, target: id,
+                  style: { stroke: '#00ffcc', strokeWidth: 2 },
+                  markerEnd: { type: MarkerType.Arrow, color: '#00ffcc' },
+                }]);
+              }
+              return [...nds, newNode];
+            });
           }
-        ]);
 
-        if (previousNode) {
-          setEdges(eds => [...eds, {
-            id: `e-${previousNode.id}-${id}`,
-            source: previousNode.id,
-            target: id,
-            style: { stroke: '#00ffcc', strokeWidth: 2 },
-            markerEnd: { type: MarkerType.Arrow, color: '#00ffcc' },
-          }]);
-        }
-      }
+          if (data.type === "node_complete") {
+            setLogs(prev => [...prev, `[COMPLETE]: ${data.payload.task}`]);
+            setNodes(nds => nds.map(n => n.id === data.payload.task
+              ? { ...n, style: { ...n.style, borderColor: '#555', color: '#555', boxShadow: 'none' } } : n));
+            setEdges(eds => eds.map(e =>
+              (e.source === data.payload.task || e.target === data.payload.task)
+                ? { ...e, style: { ...e.style, stroke: '#555' } } : e));
+          }
+        } catch (_) {}
+      };
 
-      if (data.type === "node_complete") {
-        setLogs(prev => [...prev, `[COMPLETE]: ${data.payload.task}`]);
-        // Turn the node gray when finished
-        setNodes(nds => nds.map(n => n.id === data.payload.task ? { ...n, style: { ...n.style, borderColor: '#555', color: '#555', boxShadow: 'none' } } : n));
-        setEdges(eds => eds.map(e => (e.source === data.payload.task || e.target === data.payload.task) ? { ...e, style: { ...e.style, stroke: '#555' } } : e));
-      }
+      ws.current.onclose = () => {
+        setLogs(prev => [...prev, "[HUD]: Hive Router disconnected. Reconnecting in 3s..."]);
+        setTimeout(connect, 3000);
+      };
     };
 
-    ws.current.onclose = () => setLogs(prev => [...prev, "[FATAL]: Neural Link Severed. REBOOT MANDATORY."]);
-
+    connect();
     return () => ws.current?.close();
-  }, [nodes.length]);
+  }, []); // ← empty array = connect ONCE, never reconnect on node changes
+
+  // ─── FIX 2: LiveKit voice connection ───────────────────────────────────────────
+  useEffect(() => {
+    if (!LIVEKIT_TOKEN) {
+      setLogs(prev => [...prev, "[COMM]: No VITE_LIVEKIT_TOKEN set. Voice link inactive."]);
+      return;
+    }
+
+    const lkRoom = new Room();
+    room.current = lkRoom;
+
+    lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === 'audio' && audioRef.current) {
+        track.attach(audioRef.current);
+        setVoiceStatus('LIVE');
+        setLogs(prev => [...prev, "[COMM]: Neural voice link established. F.R.I.D.A.Y. is online."]);
+      }
+    });
+
+    lkRoom.on(RoomEvent.Disconnected, () => {
+      setVoiceStatus('SEVERED');
+      setLogs(prev => [...prev, "[COMM]: Voice link disconnected."]);
+    });
+
+    lkRoom.connect(LIVEKIT_URL, LIVEKIT_TOKEN, { autoSubscribe: true })
+      .then(() => lkRoom.localParticipant.setMicrophoneEnabled(true))
+      .then(() => setLogs(prev => [...prev, "[COMM]: Microphone armed. Speak to F.R.I.D.A.Y."]))
+      .catch(err => setLogs(prev => [...prev, `[COMM ERROR]: ${err.message}`]));
+
+    return () => { lkRoom.disconnect(); };
+  }, []);
 
   const handleCommand = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && command.trim() !== '') {
@@ -123,12 +160,13 @@ export default function FridayOS() {
     }
   };
 
-  const onNodesChange = (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds));
-  const onEdgesChange = (changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds));
-
+  const onNodesChange = useCallback((changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
 
   return (
     <div className="h-screen w-screen bg-[#020202] text-[#00ffcc] flex flex-col p-6 overflow-hidden font-mono relative">
+      {/* Hidden audio element for F.R.I.D.A.Y.'s voice */}
+      <audio ref={audioRef} autoPlay />
 
       {/* GLOBAL TACTICAL SCANLINES */}
       <div className="absolute inset-0 scanlines"></div>
@@ -155,7 +193,7 @@ export default function FridayOS() {
           <StatusIndicator label="SYSTEM LOAD" icon={Activity} value="NORMAL" status="nominal" />
           <StatusIndicator label="CORTEX STATUS" icon={Layers3} value="LINKED" status="nominal" />
           <StatusIndicator label="NIM CLUSTER" icon={Code} value="STANDBY" status="nominal" />
-          <StatusIndicator label="OPTICAL CORTEX" icon={Eye} value="ACTIVE" status="nominal" />
+          <StatusIndicator label="VOICE LINK" icon={Eye} value={voiceStatus} status={voiceStatus === 'LIVE' ? 'nominal' : 'warning'} />
         </div>
         <div className="absolute top-0 right-0 p-2 text-[8px] text-[#00ffcc]/40 bg-black/50 tracking-widest">{`[ BUILD: MARK_VI_OS_HUD ] [ DIRECTOR_GANDHAR_ACHARYA ]`}</div>
       </div>
@@ -169,11 +207,18 @@ export default function FridayOS() {
             <div className="text-xs opacity-70">ACTIVE PROTOCOLS: {nodes.length}</div>
           </div>
           <div className="flex-1 relative">
-            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} fitView className="dark">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              nodeTypes={nodeTypes}
+              fitView
+              className="dark"
+            >
               <Background color="#00ffcc" gap={20} size={1} style={{ opacity: 0.05 }} />
             </ReactFlow>
           </div>
-          {/* AESTHETIC TELEMETRY OVERLAY */}
           <div className="absolute bottom-4 left-4 p-2 bg-black/70 border border-[#00ffcc]/30 text-xs tracking-wider opacity-60">
             {`X:${nodes[nodes.length - 1]?.position?.x.toFixed(2) || '--'} Y:${nodes[nodes.length - 1]?.position?.y.toFixed(2) || '--'} [TRACE_ACTIVE]`}
           </div>
@@ -189,15 +234,16 @@ export default function FridayOS() {
               <Eye size={16} /> COGNITIVE FEED & WAVEFORM
             </div>
             <div className="flex-1 flex gap-4 p-3 relative">
-              {/* VIDEO MOUNT (Place Holder) */}
               <div className="w-3/5 border-2 border-[#00ffcc]/40 bg-[#0a0a0a] flex items-center justify-center text-[#00ffcc]/30 relative">
                 [ OPTICAL CORTEX FEED ]
                 <Target size={20} className="absolute top-2 left-2 text-[#00ffcc]/50" />
               </div>
-              {/* WAVEFORM & SCANNER */}
               <div className="w-2/5 flex flex-col gap-3 justify-center items-center">
                 <JarvisCore />
-                <div className="text-center text-xs opacity-80 leading-relaxed tracking-wider text-[#00ffcc]">VOICE PROTOCOL<br />[LISTENING]</div>
+                <div className="text-center text-xs opacity-80 leading-relaxed tracking-wider text-[#00ffcc]">
+                  VOICE PROTOCOL<br />
+                  <span className={voiceStatus === 'LIVE' ? 'text-[#00ffcc]' : 'text-yellow-400'}>[{voiceStatus}]</span>
+                </div>
               </div>
               <div className="absolute bottom-2 right-2 p-1 opacity-50 scale-75"><TelemetryScanner /></div>
             </div>
@@ -210,12 +256,18 @@ export default function FridayOS() {
             </div>
             <div className="flex-1 p-5 overflow-y-auto text-xs opacity-80 flex flex-col gap-1.5 leading-relaxed relative z-10">
               {logs.map((log, i) => (
-                <div key={i} className={log.includes('[FATAL]') ? 'text-red-500 font-bold' : log.includes('[DIRECTOR]') ? 'text-white' : log.includes('[COMPLETE]') ? 'text-[#00ffcc]/60' : 'text-[#00ffcc]'}>
+                <div key={i} className={
+                  log.includes('[FATAL]') ? 'text-red-500 font-bold' :
+                  log.includes('[COMM ERROR]') ? 'text-red-400' :
+                  log.includes('[DIRECTOR]') ? 'text-white' :
+                  log.includes('[COMPLETE]') ? 'text-[#00ffcc]/60' :
+                  log.includes('[COMM]') ? 'text-yellow-300' :
+                  'text-[#00ffcc]'
+                }>
                   {`> ${log}`}
                 </div>
               ))}
             </div>
-            {/* DECOY DATA MATRIX (inspired by image_75810d.jpg) */}
             <div className="absolute inset-0 p-5 font-mono text-[9px] text-[#00ffcc]/10 overflow-hidden leading-none z-0 tracking-tight select-none opacity-40">
               {[...Array(50)].map(() => (Math.random() > 0.5 ? '1' : '0')).join('')}
               {[...Array(50)].map(() => (Math.random() > 0.7 ? 'X' : 'O')).join('')}
