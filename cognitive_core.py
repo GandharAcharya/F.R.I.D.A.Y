@@ -530,7 +530,6 @@ async def resume_past_session(context: RunContext, project_name: str, topic: str
                 else:
                     return f"Tell the Director: 'I remember the file was {os.path.basename(target_path)}, but it seems to have been deleted or moved.'"
             else:
-                # FIX: pre-compute the join BEFORE the f-string (Python 3.11 backslash restriction)
                 options = [f"Option {i+1} is {os.path.basename(path)}, where we worked on {ctx[:50]}" for i, (path, ctx) in enumerate(unique_files.items())]
                 options_str = ". ".join(options)
                 return f"Tell the Director: 'I found multiple files from that session. {options_str}. Which one would you like me to pull up?'"
@@ -729,21 +728,21 @@ async def ignite_core():
 
     while True:
         try:
+            # Mint a fresh agent-side token for friday_core
             token = (
                 AccessToken(os.getenv("LIVEKIT_API_KEY"), os.getenv("LIVEKIT_API_SECRET"))
                 .with_identity("friday_core")
                 .with_name("F.R.I.D.A.Y.")
-                .with_grants(VideoGrants(room_join=True, room="friday-terminal",
-                                         can_publish=True, can_subscribe=True))
+                .with_grants(VideoGrants(
+                    room_join=True,
+                    room="friday-terminal",
+                    can_publish=True,
+                    can_subscribe=True,
+                ))
                 .to_jwt()
             )
 
-            room = rtc.Room()
-            await room.connect(os.getenv("LIVEKIT_URL", "wss://friday-7ywuni04.livekit.cloud"), token)
-            print("[COGNITIVE CORE]: LiveKit room connected.")
-
-            await room.local_participant.publish_track(cortex.track)
-            print("[COGNITIVE CORE]: Video feed published. I can see your screen.")
+            livekit_url = os.getenv("LIVEKIT_URL", "wss://friday-7ywuni04.livekit.cloud")
 
             model = google_beta.realtime.RealtimeModel(
                 model=os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-exp"),
@@ -760,9 +759,29 @@ async def ignite_core():
                 ),
             )
 
+            # ── THE FIX ────────────────────────────────────────────────────────────
+            # Do NOT call room.connect() manually.
+            # AgentSession owns the room lifecycle entirely — pass it an unconnected
+            # Room and the url+token so it can connect on its own terms.
+            room = rtc.Room()
+
             agent = Agent(tools=FRIDAY_TOOLS)
-            session = AgentSession(room=room, agent=agent, model=model)
-            await session.start()
+            session = AgentSession(
+                room=room,
+                agent=agent,
+                model=model,
+            )
+
+            # Connect + start session together — AgentSession calls room.connect internally
+            await session.start(
+                room_url=livekit_url,
+                token=token,
+            )
+            # ───────────────────────────────────────────────────────────────────────
+
+            # Publish the screen-capture video track after the room is live
+            await room.local_participant.publish_track(cortex.track)
+            print("[COGNITIVE CORE]: Video feed published. I can see your screen.")
 
             print("[COGNITIVE CORE]: F.R.I.D.A.Y. is online. Awaiting Director's voice.")
             await asyncio.Event().wait()
