@@ -530,8 +530,10 @@ async def resume_past_session(context: RunContext, project_name: str, topic: str
                 else:
                     return f"Tell the Director: 'I remember the file was {os.path.basename(target_path)}, but it seems to have been deleted or moved.'"
             else:
+                # FIX: pre-compute the join BEFORE the f-string (Python 3.11 backslash restriction)
                 options = [f"Option {i+1} is {os.path.basename(path)}, where we worked on {ctx[:50]}" for i, (path, ctx) in enumerate(unique_files.items())]
-                return f"Tell the Director: 'I found multiple files from that session. {\'.\'  .join(options)}. Which one would you like me to pull up?'"
+                options_str = ". ".join(options)
+                return f"Tell the Director: 'I found multiple files from that session. {options_str}. Which one would you like me to pull up?'"
         return await asyncio.to_thread(resolve_and_open)
     except Exception as e:
         return f"Tell the Director the tool failed because: {str(e)}"
@@ -727,7 +729,6 @@ async def ignite_core():
 
     while True:
         try:
-            # 1. Mint a fresh server-side token
             token = (
                 AccessToken(os.getenv("LIVEKIT_API_KEY"), os.getenv("LIVEKIT_API_SECRET"))
                 .with_identity("friday_core")
@@ -737,16 +738,13 @@ async def ignite_core():
                 .to_jwt()
             )
 
-            # 2. Connect to LiveKit room
             room = rtc.Room()
             await room.connect(os.getenv("LIVEKIT_URL", "wss://friday-7ywuni04.livekit.cloud"), token)
             print("[COGNITIVE CORE]: LiveKit room connected.")
 
-            # 3. Publish screen feed
             await room.local_participant.publish_track(cortex.track)
             print("[COGNITIVE CORE]: Video feed published. I can see your screen.")
 
-            # 4. Build the Gemini Live realtime model (livekit-agents 1.5.x pattern)
             model = google_beta.realtime.RealtimeModel(
                 model=os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-exp"),
                 voice="Aoede",
@@ -762,7 +760,6 @@ async def ignite_core():
                 ),
             )
 
-            # 5. Create agent with tools, start session — correct 1.5.x API
             agent = Agent(tools=FRIDAY_TOOLS)
             session = AgentSession(room=room, agent=agent, model=model)
             await session.start()
