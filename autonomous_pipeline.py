@@ -4,6 +4,18 @@ import re
 import ast
 from config import FRIDAY_ROOT, STAGING_DIR, WORKSPACE_ROOT
 
+_EXT_SIGNALS = {
+    ".tsx":  ["import React", "from 'react'", "JSX", "<div", "useState"],
+    ".ts":   ["interface ", "type ", ": string", ": number", "export const"],
+    ".js":   ["require(", "module.exports", "const ", "let "],
+    ".html": ["<!DOCTYPE", "<html", "<body"],
+    ".css":  ["{", "margin:", "padding:", "color:"],
+    ".json": ["{", "\":\"", "null", "true", "false"],
+    ".sh":   ["#!/bin/bash", "echo ", "export "],
+    ".c":    ["#include", "int main", "printf"],
+    ".py":   ["def ", "import ", "class ", "print(", "async def"],
+}
+
 def extract_json_plan(llm_output: str):
     # Strip all markdown bloat Kimi might have added
     clean_result = llm_output.replace("```json", "").replace("```python", "").replace("```", "").strip()
@@ -99,18 +111,6 @@ async def run_autonomous_lifecycle(goal: str, project_name: str):
         generated_code = code_match.group(1).strip() if code_match else code_result.strip()
 
         # 3. Content-based extension detection fallback
-        _EXT_SIGNALS = {
-            ".tsx":  ["import React", "from 'react'", "JSX", "<div", "useState"],
-            ".ts":   ["interface ", "type ", ": string", ": number", "export const"],
-            ".js":   ["require(", "module.exports", "const ", "let "],
-            ".html": ["<!DOCTYPE", "<html", "<body"],
-            ".css":  ["{", "margin:", "padding:", "color:"],
-            ".json": ["{", "\":\"", "null", "true", "false"],
-            ".sh":   ["#!/bin/bash", "echo ", "export "],
-            ".c":    ["#include", "int main", "printf"],
-            ".py":   ["def ", "import ", "class ", "print(", "async def"],
-        }
-
         detected_ext = ".py"
         code_header = generated_code[:1000]
         for ext, signals in _EXT_SIGNALS.items():
