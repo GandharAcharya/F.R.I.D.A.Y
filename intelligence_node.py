@@ -1,6 +1,6 @@
 import os
 import asyncio
-import google.generativeai as genai
+from google import genai
 import urllib.request
 import xml.etree.ElementTree as ET
 import requests
@@ -14,8 +14,7 @@ def broadcast_status(node_name: str, message: str):
         pass
 
 hands = SystemController()
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-analyst_brain = genai.GenerativeModel('gemini-2.5-flash')
+_intel_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
 def fetch_rss_feed(url: str, limit: int = 5) -> str:
     """Armored network request to bypass anti-bot firewalls instantly."""
@@ -68,14 +67,17 @@ async def generate_macro_intel_report():
     )
     
     try:
-        response = await analyst_brain.generate_content_async(prompt)
+        response = await _intel_client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
         from config import INTEL_BRIEFING_FILE
         report_path = INTEL_BRIEFING_FILE
         
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(response.text)
             
-        hands.execute_terminal(f'PowerShell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak(\'Director, the Intelligence Swarm has compiled your macro cross-correlation report.\')"')
+        hands.execute_terminal('PowerShell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak(\'Director, the Intelligence Swarm has compiled your macro cross-correlation report.\')"')
     except Exception as e:
         print(f"[INTEL COGNITIVE ERROR]: {str(e)}")
     finally:
