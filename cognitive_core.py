@@ -16,10 +16,14 @@ if bad_model.startswith("models/"):
     os.environ["GEMINI_LIVE_MODEL"] = bad_model.replace("models/", "")
 
 # --- THE GLOBAL SILENCER ---
-warnings.filterwarnings("ignore", category=ResourceWarning)
+# Scoped suppressions ONLY — never suppress all warnings globally.
+warnings.filterwarnings("ignore", category=ResourceWarning, module="asyncio")
+warnings.filterwarnings("ignore", category=ResourceWarning, module="livekit")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="livekit")
+# DO NOT add a blanket filterwarnings("ignore") — it hides real errors from ChromaDB,
+# LiveKit, and the autonomous pipeline.
 # --------------------------------------------------------
-from config import FRIDAY_ROOT, WORKSPACE_ROOT
+from config import FRIDAY_ROOT, WORKSPACE_ROOT, MACRO_FILE, SYSTEM_VITALS
 
 # --- BRINGING THE SYSTEMS ONLINE ---
 from watchdog_node import pacemaker
@@ -28,7 +32,7 @@ from vision_node import OpticalCortex
 
 import pywhatkit
 from PIL import Image
-import google.generativeai as genai
+from google import genai
 from livekit.plugins import silero
 from swarm_nodes import deploy_coder_swarm, deep_scan_project, precision_edit_code, autonomous_dev_loop # Import Swarm nodes
 from intelligence_node import generate_macro_intel_report
@@ -46,9 +50,9 @@ from terminal_node import execute_ghost_command
 # The LiveKit Neural Bridge
 from livekit import rtc
 from livekit.api import AccessToken, VideoGrants
-from livekit.agents import function_tool, RunContext
-from livekit.agents.voice import AgentSession, Agent
-from livekit.plugins.google.realtime import RealtimeModel
+from livekit.agents import function_tool, RunContext, Agent, AgentSession
+from core.models import get_realtime_model
+
 
 # Import Pillar 2: The Vector Memory
 from memory_matrix import VectorMemory
@@ -57,10 +61,10 @@ from memory_matrix import VectorMemory
 from os_control import SystemController
 
 # Configure the secondary Vision Sub-Agent
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 # The correct model identifier for the realtime/bidiGenerateContent API is gemini-2.0-flash-exp
 # It DOES NOT use the "models/" prefix.
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-exp")
+
 
 # Initialize the Hippocampus
 brain_db = VectorMemory()
@@ -107,9 +111,25 @@ async def read_system_file(context: RunContext, filename: str) -> str:
     except Exception as e:
         return f"Tell the Director the tool failed because: {str(e)}"
 
+# SECURITY BLOCKLIST — commands that can cause irreversible system damage
+_TERMINAL_BLOCKLIST = [
+    "del ", "rm ", "rmdir", "format ", "rd ", "shutdown",
+    "reg delete", "reg add", "bcdedit", "diskpart",
+    "mkfs", "dd if=", "> /dev/", "DROP TABLE", "DROP DATABASE",
+]
+
 @function_tool
 async def execute_terminal_command(context: RunContext, command: str) -> str:
     """Executes a terminal command and returns the output or error."""
+    # Safety Gate: Block destructive commands from LLM hallucination
+    cmd_lower = command.lower().strip()
+    for blocked in _TERMINAL_BLOCKLIST:
+        if blocked in cmd_lower:
+            return (
+                f"Tell the Director: \'I blocked the command [{command}] because it "
+                f"contains a potentially destructive operation ({blocked}). "
+                f"If you intended this, please use the VS Code terminal directly.\'"
+            )
     try:
         print(f"[OS EXEC]: {command}")
         return hands.execute_terminal(command)
@@ -128,12 +148,14 @@ async def analyze_visual_environment(context: RunContext, query: str) -> str:
         hands.capture_screen("friday_eye.png")
         
         # 2. Boot a secondary, lightweight vision model to process the image
-        vision_model = genai.GenerativeModel('gemini-2.5-flash')
         img = Image.open(os.path.join(hands.root_dir, "friday_eye.png"))
         
         # 3. Ask the vision model what it sees
         prompt = f"You are F.R.I.D.A.Y., looking at your Director's computer screen. Analyze this image and answer his query concisely: {query}"
-        response = await vision_model.generate_content_async([prompt, img])
+        response = await client.aio.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=[prompt, img]
+        )
         
         pacemaker.end_thought(task_id)
         return f"Visual Analysis Complete: {response.text}"
@@ -524,7 +546,7 @@ async def deep_sonar_sweep(context: RunContext, target_name: str, root_drive: st
 async def check_system_vitals(context: RunContext) -> str:
     """Use this if the Director asks how the PC is performing, if the computer is lagging, or what he is currently looking at."""
     try:
-        with open("E:\\F.R.I.D.A.Y\\system_vitals.txt", "r", encoding="utf-8") as f:
+        with open(SYSTEM_VITALS, "r", encoding="utf-8") as f:
             return f.read()
     except Exception as e:
         return f"Tell the Director the tool failed because: {str(e)}"
@@ -570,9 +592,9 @@ async def auto_journal_event(context: RunContext, project_name: str, event_summa
     try:
         print(f"[SUBCONSCIOUS]: Tagging {associated_file_path} into project {project_name} memory...")
         def log_memory():
-            from memory_matrix import VectorMemory
-            db = VectorMemory()
-            return db.journal_workspace_event(project_name, event_summary, associated_file_path)
+            # Use the module-level brain_db singleton.
+            # Creating new VectorMemory() inside threads exhausts the ChromaDB pool.
+            return brain_db.journal_workspace_event(project_name, event_summary, associated_file_path)
         return await asyncio.to_thread(log_memory)
     except Exception as e:
         return f"Tell the Director the tool failed because: {str(e)}"
@@ -584,11 +606,9 @@ async def resume_past_session(context: RunContext, project_name: str, topic: str
         print(f"[TEMPORAL SCAN]: Searching memory for '{topic}' in project '{project_name}' over the last {timeframe_in_days} days...")
         
         def resolve_and_open():
-            from memory_matrix import VectorMemory
             import subprocess, os
-            db = VectorMemory()
-            
-            matches = db.query_past_workspace(project_name, topic, timeframe_in_days)
+            # Use the module-level brain_db singleton — same reason as auto_journal_event.
+            matches = brain_db.query_past_workspace(project_name, topic, timeframe_in_days)
             
             if not matches:
                 return f"Tell the Director: 'I scanned the matrix, but I don't have any files logged matching {topic} in that timeframe.'"
@@ -638,7 +658,7 @@ async def define_execution_macro(context: RunContext, macro_name: str, sequence_
         print(f"[MACRO ENGINE]: Saving new routine -> {macro_name}")
         def save_macro():
             import json, os
-            macro_file = "E:\\F.R.I.D.A.Y\\macros.json"
+            macro_file = MACRO_FILE
             
             # Load existing macros
             macros = {}
@@ -664,7 +684,7 @@ async def trigger_execution_macro(context: RunContext, macro_name: str) -> str:
     """Use this when the Director asks to run a saved protocol."""
     try:
         import json, os
-        macro_file = "E:\\F.R.I.D.A.Y\\macros.json"
+        macro_file = MACRO_FILE
         
         if not os.path.exists(macro_file):
             return "Tell the Director: 'You haven't defined any macros yet.'"
@@ -718,7 +738,7 @@ async def run_terminal_command(context: RunContext, command: str, project_name: 
             workspace = registered_path
         else:
             # Fallback to Workspace folder
-            workspace = os.path.join("E:\\F.R.I.D.A.Y\\Workspace", project_name)
+            workspace = os.path.join(WORKSPACE_ROOT, project_name)
             if not os.path.exists(workspace):
                 return f"Tell the Director: 'I don't know where the {project_name} project is located. Please give me the absolute path so I can link it using link_project_directory.'"
             
@@ -870,31 +890,13 @@ async def ignite_core():
                 "Act like a true AGI Operator."
             )
             
-            agent = Agent(
-                instructions=instructions, 
-                tools=[
-                    memorize_context, recall_context, create_system_file, read_system_file, 
-                    execute_terminal_command, analyze_visual_environment, play_youtube_media, search_live_internet,
-                    physical_keyboard_type, physical_keyboard_hotkey, physical_mouse_click, deploy_sentinel,
-                    delegate_heavy_coding, deploy_intelligence_analysis, master_system_volume, launch_desktop_application,
-                    fast_forge_script, edit_existing_script, autonomous_developer_task, analyze_project_codebase,
-                    parallel_sonar_and_open, check_system_vitals, close_desktop_application, absolute_file_override,
-                    auto_journal_event, move_app_to_second_screen, resume_past_session,
-                    surgical_web_navigation, close_browser_tab,
-                    define_execution_macro, trigger_execution_macro, initiate_system_defibrillator,
-                    run_terminal_command, outsource_code_to_nim, link_project_directory, initiate_autonomous_development,
-                    check_personal_inbox, send_personal_email, check_trading_asset, deep_sonar_sweep
-                ],
-                # Bumped to 1.2s. The server will no longer cancel your tools if you breathe or click your mouse.
-                vad=silero.VAD.load(min_silence_duration=1.2) 
-            )
-            
-            # Strip any accidental 'models/' prefixes if they exist in the .env file
-            safe_model_id = GEMINI_LIVE_MODEL.replace("models/", "")
-            
-            # Switched voice from Kore to Aoede for a smoother output stream
-            session = AgentSession(llm=RealtimeModel(model=safe_model_id, voice="Puck", temperature=0.8))
-            await session.start(agent=agent, room=room)
+            # Import the Friday functions module (placeholder if not present)
+            import friday_functions
+            # Use the singleton agent manager to get a cached MultimodalAgent
+            from core.agent_manager import get_agent
+            agent = get_agent(friday_functions.friday_functions)
+            # Initialize the session with the LiveKit room and the agent
+            session = AgentSession(room, agent)
             print("[COGNITIVE CORE]: F.R.I.D.A.Y. is online.")
             await asyncio.Event().wait()
         except Exception as e:

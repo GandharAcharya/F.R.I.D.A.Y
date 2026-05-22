@@ -1,6 +1,6 @@
 import os
 import asyncio
-import google.generativeai as genai
+from google import genai
 import requests
 import PIL.Image
 import re
@@ -8,9 +8,10 @@ from os_control import SystemController
 
 hands = SystemController()
 
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 # DOWNGRADED TO FLASH FOR MAXIMUM SPEED AS REQUESTED
-architect_model = genai.GenerativeModel('gemini-2.5-flash')
+MODEL_NAME = 'gemini-2.0-flash'
+EDITOR_MODEL = 'gemini-2.0-pro-exp-02-05'
 
 def broadcast_status(node_name: str, message: str):
     """Pings the Master Hive Router with a real-time status update."""
@@ -42,7 +43,7 @@ async def deploy_coder_swarm(project_name: str, filename: str, objective: str):
 
         prompt = f"Write a complete script for {project_name}. Goal: {objective}. Return ONLY raw code."
         
-        response = await architect_model.generate_content_async(prompt)
+        response = await client.aio.models.generate_content(model=MODEL_NAME, contents=prompt)
         code_content = response.text.replace("```python", "").replace("```html", "").replace("```", "").strip()
 
         file_path = os.path.join(project_path, filename)
@@ -91,8 +92,7 @@ async def precision_edit_code(project_name: str, filename: str, edit_instruction
         )
         
         # We use the deep-thinking Pro model specifically for editing to guarantee whitespace accuracy
-        editor_model = genai.GenerativeModel('gemini-2.5-pro')
-        response = await editor_model.generate_content_async(prompt)
+        response = await client.aio.models.generate_content(model=EDITOR_MODEL, contents=prompt)
         
         # 3. Clean the response and parse the JSON patch (BULLETPROOF JSON EXTRACTION)
         raw_text = response.text
@@ -193,7 +193,7 @@ async def deep_scan_project(project_name: str, query: str):
     prompt = f"You are analyzing the {project_name} codebase. The Director asks: {query}\n\nHere is the full codebase context:\n{compiled_code}"
     
     try:
-        response = await architect_model.generate_content_async(prompt)
+        response = await client.aio.models.generate_content(model=MODEL_NAME, contents=prompt)
         
         # 3. Save the report and alert the Director
         from config import WORKSPACE_ROOT
@@ -264,8 +264,7 @@ async def autonomous_dev_loop(project_name: str, vague_instructions: str, visual
         # 3. USE THE PRO REASONING MODEL (Required for cross-referencing vision + code)
         print("[SWARM NODE]: Code & Vision ingested. Formulating autonomous patch...")
         broadcast_status("Architect", "Patches Engine...")
-        senior_model = genai.GenerativeModel('gemini-2.5-pro')
-        response = await senior_model.generate_content_async(prompt_content)
+        response = await client.aio.models.generate_content(model=EDITOR_MODEL, contents=prompt_content)
         
         # 4. PARSE AND APPLY MULTI-FILE PATCHES (BULLETPROOF JSON EXTRACTION)
         raw_text = response.text
