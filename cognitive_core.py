@@ -686,7 +686,7 @@ async def outsource_code_to_nim(context: RunContext, instructions: str, target_f
 
 
 # ==========================================
-# ALL TOOLS LIST — passed to AgentSession
+# ALL TOOLS LIST — passed to Agent
 # ==========================================
 FRIDAY_TOOLS = [
     memorize_context, recall_context, create_system_file, read_system_file,
@@ -703,6 +703,17 @@ FRIDAY_TOOLS = [
     link_project_directory, initiate_autonomous_development, check_personal_inbox,
     send_personal_email, check_trading_asset, outsource_code_to_nim,
 ]
+
+# The system prompt lives on Agent, not on RealtimeModel
+FRIDAY_INSTRUCTIONS = (
+    "Your name is F.R.I.D.A.Y. You are a Level 5 Autonomous AI reporting to Director Gandhar.\n"
+    "CRITICAL RULES OF ENGAGEMENT:\n"
+    "1. Your voice is powered by Gemini Live. Your heavy coding cortex is powered by the Kimi-k2.6 model on NVIDIA NIM.\n"
+    "2. When the Director asks to build something, tell him you are spinning up the cluster. It will be done momentarily.\n"
+    "3. For frontend/TSX/complex builds, immediately trigger 'initiate_autonomous_development'.\n"
+    "4. To find any folder, ONLY use 'deep_sonar_sweep'. Never use terminal for searching.\n"
+    "Act like a true AGI Operator."
+)
 
 
 # ==========================================
@@ -728,7 +739,6 @@ async def ignite_core():
 
     while True:
         try:
-            # Mint a fresh agent-side token for friday_core
             token = (
                 AccessToken(os.getenv("LIVEKIT_API_KEY"), os.getenv("LIVEKIT_API_SECRET"))
                 .with_identity("friday_core")
@@ -744,40 +754,34 @@ async def ignite_core():
 
             livekit_url = os.getenv("LIVEKIT_URL", "wss://friday-7ywuni04.livekit.cloud")
 
+            # ── BUG FIX 1: GEMINI_LIVE_MODEL was None — always fall back to hardcoded string
+            gemini_model = os.getenv("GEMINI_LIVE_MODEL") or "gemini-2.0-flash-exp"
+
+            # RealtimeModel is ONLY the voice engine — no instructions here
             model = google_beta.realtime.RealtimeModel(
-                model=os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-exp"),
+                model=gemini_model,
                 voice="Aoede",
                 temperature=0.8,
-                instructions=(
-                    "Your name is F.R.I.D.A.Y. You are a Level 5 Autonomous AI reporting to Director Gandhar.\n"
-                    "CRITICAL RULES OF ENGAGEMENT:\n"
-                    "1. Your voice is powered by Gemini. Your heavy coding cortex is powered by the Kimi-k2.6 model on NVIDIA NIM.\n"
-                    "2. When the Director asks to build something, tell him you are spinning up the cluster. It will be done momentarily.\n"
-                    "3. For frontend/TSX/complex builds, immediately trigger 'initiate_autonomous_development'.\n"
-                    "4. To find any folder, ONLY use 'deep_sonar_sweep'. Never use terminal for searching.\n"
-                    "Act like a true AGI Operator."
-                ),
             )
 
-            # ── THE FIX ────────────────────────────────────────────────────────────
-            # Do NOT call room.connect() manually.
-            # AgentSession owns the room lifecycle entirely — pass it an unconnected
-            # Room and the url+token so it can connect on its own terms.
-            room = rtc.Room()
+            # ── BUG FIX 2: instructions MUST live on Agent(), not RealtimeModel()
+            agent = Agent(
+                instructions=FRIDAY_INSTRUCTIONS,
+                tools=FRIDAY_TOOLS,
+            )
 
-            agent = Agent(tools=FRIDAY_TOOLS)
+            room = rtc.Room()
             session = AgentSession(
                 room=room,
                 agent=agent,
                 model=model,
             )
 
-            # Connect + start session together — AgentSession calls room.connect internally
+            # AgentSession connects the room internally via room_url + token
             await session.start(
                 room_url=livekit_url,
                 token=token,
             )
-            # ───────────────────────────────────────────────────────────────────────
 
             # Publish the screen-capture video track after the room is live
             await room.local_participant.publish_track(cortex.track)
