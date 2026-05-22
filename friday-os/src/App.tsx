@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactFlow, { Background, applyNodeChanges, applyEdgeChanges, MarkerType } from 'reactflow';
 import type { NodeChange, EdgeChange, Node, Edge } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -43,9 +43,8 @@ const JarvisCore = () => (
 // --- NODE TYPES (defined OUTSIDE component to prevent React Flow warning) ---
 const nodeTypes = {};
 
-// --- LIVEKIT CONFIG (reads from .env or falls back to hardcoded values) ---
-const LIVEKIT_URL   = import.meta.env.VITE_LIVEKIT_URL   || 'wss://friday-7ywuni04.livekit.cloud';
-const LIVEKIT_TOKEN = import.meta.env.VITE_LIVEKIT_TOKEN || '';
+// --- NEURAL ROUTER BASE URL ---
+const ROUTER_URL = import.meta.env.VITE_ROUTER_URL || 'http://localhost:8080';
 
 // --- MASTER COMPONENT ---
 export default function FridayOS() {
@@ -54,14 +53,14 @@ export default function FridayOS() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [command, setCommand] = useState("");
   const [voiceStatus, setVoiceStatus] = useState("STANDBY");
-  const ws  = useRef<WebSocket | null>(null);
+  const ws   = useRef<WebSocket | null>(null);
   const room = useRef<Room | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // ─── FIX 1: WebSocket connects ONCE (empty dep array), not on every node add ───
+  // ─── WEBSOCKET: connects ONCE ─────────────────────────────────────────────
   useEffect(() => {
     const connect = () => {
-      ws.current = new WebSocket("ws://localhost:8080/ws/cortex");
+      ws.current = new WebSocket(`${ROUTER_URL.replace('http', 'ws')}/ws/cortex`);
 
       ws.current.onopen = () => {
         setLogs(prev => [...prev, "[HUD]: Hive Router linked. Real-time telemetry active."]);
@@ -119,37 +118,51 @@ export default function FridayOS() {
 
     connect();
     return () => ws.current?.close();
-  }, []); // ← empty array = connect ONCE, never reconnect on node changes
+  }, []);
 
-  // ─── FIX 2: LiveKit voice connection ───────────────────────────────────────────
+  // ─── LIVEKIT: fetch fresh token from neural_router, then connect ──────────
   useEffect(() => {
-    if (!LIVEKIT_TOKEN) {
-      setLogs(prev => [...prev, "[COMM]: No VITE_LIVEKIT_TOKEN set. Voice link inactive."]);
-      return;
-    }
+    let lkRoom: Room;
 
-    const lkRoom = new Room();
-    room.current = lkRoom;
+    const bootVoice = async () => {
+      try {
+        setLogs(prev => [...prev, "[COMM]: Requesting voice token from Neural Router..."]);
 
-    lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === 'audio' && audioRef.current) {
-        track.attach(audioRef.current);
-        setVoiceStatus('LIVE');
-        setLogs(prev => [...prev, "[COMM]: Neural voice link established. F.R.I.D.A.Y. is online."]);
+        const res = await fetch(`${ROUTER_URL}/livekit-token`);
+        const { token, url, error } = await res.json();
+
+        if (error || !token) {
+          setLogs(prev => [...prev, `[COMM ERROR]: Token fetch failed — ${error || 'empty token'}. Check .env LIVEKIT_API_KEY/SECRET.`]);
+          return;
+        }
+
+        lkRoom = new Room();
+        room.current = lkRoom;
+
+        lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === 'audio' && audioRef.current) {
+            track.attach(audioRef.current);
+            setVoiceStatus('LIVE');
+            setLogs(prev => [...prev, "[COMM]: Neural voice link established. F.R.I.D.A.Y. is online."]);
+          }
+        });
+
+        lkRoom.on(RoomEvent.Disconnected, () => {
+          setVoiceStatus('SEVERED');
+          setLogs(prev => [...prev, "[COMM]: Voice link disconnected."]);
+        });
+
+        await lkRoom.connect(url, token, { autoSubscribe: true });
+        await lkRoom.localParticipant.setMicrophoneEnabled(true);
+        setLogs(prev => [...prev, "[COMM]: Microphone armed. Speak to F.R.I.D.A.Y."]);
+
+      } catch (err: any) {
+        setLogs(prev => [...prev, `[COMM ERROR]: ${err.message}`]);
       }
-    });
+    };
 
-    lkRoom.on(RoomEvent.Disconnected, () => {
-      setVoiceStatus('SEVERED');
-      setLogs(prev => [...prev, "[COMM]: Voice link disconnected."]);
-    });
-
-    lkRoom.connect(LIVEKIT_URL, LIVEKIT_TOKEN, { autoSubscribe: true })
-      .then(() => lkRoom.localParticipant.setMicrophoneEnabled(true))
-      .then(() => setLogs(prev => [...prev, "[COMM]: Microphone armed. Speak to F.R.I.D.A.Y."]))
-      .catch(err => setLogs(prev => [...prev, `[COMM ERROR]: ${err.message}`]));
-
-    return () => { lkRoom.disconnect(); };
+    bootVoice();
+    return () => { lkRoom?.disconnect(); };
   }, []);
 
   const handleCommand = (e: React.KeyboardEvent<HTMLInputElement>) => {
