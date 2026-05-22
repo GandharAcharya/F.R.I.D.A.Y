@@ -10,12 +10,18 @@ import psutil
 import asyncio
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
+from dotenv import load_dotenv
+
+# ← THIS IS THE FIX: load the root .env BEFORE reading any os.getenv() calls
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(ROOT_DIR, ".env"))
+
 asyncio.get_event_loop().set_default_executor(ThreadPoolExecutor(max_workers=32))
 
-LIVEKIT_URL         = os.getenv("LIVEKIT_URL",         "wss://friday-7ywuni04.livekit.cloud")
-LIVEKIT_API_KEY     = os.getenv("LIVEKIT_API_KEY",     "")
-LIVEKIT_API_SECRET  = os.getenv("LIVEKIT_API_SECRET",  "")
-LIVEKIT_ROOM        = os.getenv("LIVEKIT_ROOM",        "friday-terminal")
+LIVEKIT_URL         = os.getenv("LIVEKIT_URL",        "wss://friday-7ywuni04.livekit.cloud")
+LIVEKIT_API_KEY     = os.getenv("LIVEKIT_API_KEY",    "")
+LIVEKIT_API_SECRET  = os.getenv("LIVEKIT_API_SECRET", "")
+LIVEKIT_ROOM        = os.getenv("LIVEKIT_ROOM",       "friday-terminal")
 
 def generate_livekit_token() -> str:
     """Mint a fresh 6-hour participant token for the Director."""
@@ -41,25 +47,25 @@ def generate_livekit_token() -> str:
 
 def inject_token_into_env(token: str):
     """Write VITE_ vars to friday-os/.env so React picks them up at dev-server start."""
-    ui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "friday-os")
-    env_path = os.path.join(ui_path, ".env")
+    env_path = os.path.join(ROOT_DIR, "friday-os", ".env")
     with open(env_path, "w") as f:
         f.write(f"VITE_LIVEKIT_URL={LIVEKIT_URL}\n")
         f.write(f"VITE_LIVEKIT_TOKEN={token}\n")
-    print("[SYSTEM]: Keys injected into friday-os/.env")
+    print(f"[SYSTEM]: Keys injected into friday-os/.env")
+    print(f"[SYSTEM]: Token starts with: {token[:30]}...")
 
 def boot_react_hud():
     """Generates a fresh token, injects it, then starts Vite and opens browser."""
     print("[IGNITION]: Minting fresh LiveKit access token...")
+    print(f"[DEBUG]: API_KEY={LIVEKIT_API_KEY[:8]}... SECRET={'SET' if LIVEKIT_API_SECRET else 'NOT SET'}")
     token = generate_livekit_token()
     if not token:
         print("[WARNING]: Token generation failed. Voice link will be inactive.")
     else:
         inject_token_into_env(token)
-        print("[SYSTEM]: Keys injected. Booting Opera GX Comm-Link...")
 
     print("[IGNITION]: Spinning up React Visual OS in the background...")
-    ui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "friday-os")
+    ui_path = os.path.join(ROOT_DIR, "friday-os")
 
     subprocess.Popen(
         "npm run dev",
@@ -73,22 +79,18 @@ def boot_react_hud():
     print("[IGNITION]: HUD Online. Opening neural interface...")
     webbrowser.open("http://localhost:5173")
 
-# Set the brutalist aesthetic you requested
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 class FridayHUD(ctk.CTk):
     def __init__(self):
         super().__init__()
-
         self.title("F.R.I.D.A.Y. Mark IV - Master Control")
         self.geometry("900x600")
         self.configure(fg_color="#0a0a0a")
-
         self.brain_process = None
         self.ui_process = None
         self.is_online = False
-
         self.build_ui()
 
     def build_ui(self):
@@ -161,11 +163,9 @@ class FridayHUD(ctk.CTk):
             ram_usage = ram.percent
             active_window = gw.getActiveWindow()
             title = active_window.title[:50] if active_window and active_window.title else "Desktop"
-            status_text = f"Context: {title} | CPU: {cpu_usage}% | RAM: {ram_usage}%"
-            self.context_status.configure(text=status_text)
-            state_data = f"ACTIVE WINDOW: {title}\nCPU USAGE: {cpu_usage}%\nRAM USAGE: {ram_usage}%\n"
-            with open("E:\\F.R.I.D.A.Y\\system_vitals.txt", "w", encoding="utf-8") as f:
-                f.write(state_data)
+            self.context_status.configure(text=f"Context: {title} | CPU: {cpu_usage}% | RAM: {ram_usage}%")
+            with open(os.path.join(ROOT_DIR, "system_vitals.txt"), "w", encoding="utf-8") as f:
+                f.write(f"ACTIVE WINDOW: {title}\nCPU USAGE: {cpu_usage}%\nRAM USAGE: {ram_usage}%\n")
         except:
             pass
         self.after(3000, self.track_active_context)
