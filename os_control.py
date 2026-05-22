@@ -15,14 +15,14 @@ class SystemController:
         self.root_dir = root_dir
         
         # SCOPED GOD-MODE: If F.R.I.D.A.Y. tries to run these, the API hard-blocks her.
-        self.forbidden_commands = ["del", "rm", "rmdir", "rd", "format", "diskpart", "wipe", "shutdown"]
+        self.forbidden_commands = ["del", "rm", "rmdir", "rd", "format", "diskpart", "wipe", "shutdown", "remove-item", "reg delete", "bcdedit", "dd if="]
 
     def execute_terminal(self, command: str) -> str:
         """Executes a terminal command and returns the output or error."""
         print(f"[OS API] Attempting Execution: {command}")
         
         # The Security Check
-        if any(bad_word in command.lower().split() for bad_word in self.forbidden_commands):
+        if any(bad_word in command.lower() for bad_word in self.forbidden_commands):
             return f"CRITICAL OVERRIDE: Command '{command}' violates safety protocols. Execution blocked."
             
         try:

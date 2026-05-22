@@ -111,7 +111,7 @@ async def precision_edit_code(project_name: str, filename: str, edit_instruction
         
         for edit in edits:
             if edit['search'] in new_code:
-                new_code = new_code.replace(edit['search'], edit['replace'])
+                new_code = new_code.replace(edit['search'], edit['replace'], 1)
                 changes_made += 1
             else:
                 print(f"\n[SWARM NODE WARNING]: Could not find exact match for target block. Whitespace mismatch.")
@@ -149,19 +149,40 @@ async def deep_scan_project(project_name: str, query: str):
         return
 
     # 1. Compile the entire codebase into one massive string
-    compiled_code = ""
+    all_files = []
     for root, dirs, files in os.walk(project_path):
         # Ignore git and environment folders
         if '.git' in root or '__pycache__' in root or 'venv' in root:
             continue
         for file in files:
             if file.endswith(('.py', '.html', '.css', '.js', '.json', '.c', '.cpp', '.h')):
-                file_path = os.path.join(root, file)
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        compiled_code += f"\n\n--- FILE: {file_path} ---\n{f.read()}"
-                except:
-                    pass
+                all_files.append(os.path.join(root, file))
+
+    MAX_CONTEXT_CHARS = 180_000  # ~45k tokens — safe for Gemini Flash context window
+    full_codebase = ""
+    skipped_files = []
+
+    for file_path in all_files:
+        if len(full_codebase) >= MAX_CONTEXT_CHARS:
+            skipped_files.append(file_path)
+            continue
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                chunk = f"\n\n# FILE: {file_path}\n{f.read()}"
+                if len(full_codebase) + len(chunk) > MAX_CONTEXT_CHARS:
+                    skipped_files.append(file_path)
+                    continue
+                full_codebase += chunk
+        except Exception:
+            skipped_files.append(file_path)
+
+    if skipped_files:
+        full_codebase += (
+            f"\n\n# [BUDGET EXCEEDED]: {len(skipped_files)} files omitted "
+            f"to stay within context limits: {skipped_files[:5]}"
+        )
+
+    compiled_code = full_codebase
 
     if not compiled_code:
         print("[SWARM NODE]: No readable code found.")
@@ -270,7 +291,7 @@ async def autonomous_dev_loop(project_name: str, vague_instructions: str, visual
                 current_code = f.read()
                 
             if edit['search'] in current_code:
-                new_code = current_code.replace(edit['search'], edit['replace'])
+                new_code = current_code.replace(edit['search'], edit['replace'], 1)
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(new_code)
                 changes_made += 1

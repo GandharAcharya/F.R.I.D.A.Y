@@ -1,47 +1,26 @@
-# Environment Variables
-.env
-
-# Python caching & build artifacts
+# Runtime & Data
+friday_cortex/
+*.sqlite3
+*.log
+system_vitals.txt
+current_context.txt
+macro_intelligence_briefing.txt
+STAGING/
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+*.pyc
 
-# Virtual environments
-venv/
+# System & OS
+.DS_Store
+Thumbs.db
+python os_control.py
+
+# Assets/Artifacts
+friday_eye.png
+*.tmp
+*.bak
+
+# Environment
+.env
 .venv/
 env/
-ENV/
-env.bak/
-venv.bak/
-
-# Local workspace outputs and memory storage
-Workspace/
-Obsidian_Vault/
-memory_vault/
-friday_dev_eye.png
-*.log
-
-# OS-specific files
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
+venv/

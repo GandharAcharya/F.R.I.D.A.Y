@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import ast
+from config import FRIDAY_ROOT, STAGING_DIR, WORKSPACE_ROOT
 
 def extract_json_plan(llm_output: str):
     # Strip all markdown bloat Kimi might have added
@@ -35,6 +36,7 @@ def extract_json_plan(llm_output: str):
 
 async def run_autonomous_lifecycle(goal: str, project_name: str):
     """The God-Loop: Plans, Executes, Verifies, and Refines until the goal is met."""
+    staging_dir = STAGING_DIR
     print(f"\n[AUTONOMOUS PIPELINE]: Director requested feature -> {goal} for {project_name}")
     
     # We will use the NIM router to generate the architecture plan, not code
@@ -79,41 +81,58 @@ async def run_autonomous_lifecycle(goal: str, project_name: str):
         code_prompt = f"Executing Step: {task}. Write the necessary code. Return ONLY the raw code."
         code_result = await delegate_to_nim_coder(code_prompt)
         
-        from config import WORKSPACE_ROOT
-        import re
-        
-        # 1. Dynamically detect the language from Kimi's markdown tags
-        ext = ".txt"
-        run_cmd = None
-        if "```tsx" in code_result or "```ts" in code_result:
-            ext = ".tsx"
-        elif "```js" in code_result or "```javascript" in code_result:
-            ext = ".js"
-            run_cmd = "node"
-        elif "```bash" in code_result or "```sh" in code_result:
-            ext = ".sh"
-            run_cmd = "bash"
-        elif "```python" in code_result or "```py" in code_result:
-            ext = ".py"
-            run_cmd = "python"
+        # ── INTELLIGENT EXTENSION DETECTION ─────────────────────────────────────────
+        _EXT_SIGNALS = {
+            ".tsx":  ["import React", "from 'react'", "JSX", "<div", "useState"],
+            ".ts":   ["interface ", "type ", ": string", ": number", "export const"],
+            ".js":   ["require(", "module.exports", "const ", "let "],
+            ".html": ["<!DOCTYPE", "<html", "<body"],
+            ".css":  ["{", "margin:", "padding:", "color:"],
+            ".json": ["{", "\":\"", "null", "true", "false"],
+            ".sh":   ["#!/bin/bash", "echo ", "export "],
+            ".c":    ["#include", "int main", "printf"],
+            ".py":   ["def ", "import ", "class ", "print(", "async def"],
+        }
 
-        staging_file = os.path.join(WORKSPACE_ROOT, project_name, f"staging_step_{i}{ext}")
-        os.makedirs(os.path.dirname(staging_file), exist_ok=True)
-        
         # 2. Extract ONLY the code, stripping out the conversational markdown
         code_match = re.search(r"```[a-z]*\n(.*?)```", code_result, re.DOTALL)
-        clean_code = code_match.group(1).strip() if code_match else code_result.strip()
+        generated_code = code_match.group(1).strip() if code_match else code_result.strip()
+
+        # 3. Content-based extension detection fallback
+        _EXT_SIGNALS = {
+            ".tsx":  ["import React", "from 'react'", "JSX", "<div", "useState"],
+            ".ts":   ["interface ", "type ", ": string", ": number", "export const"],
+            ".js":   ["require(", "module.exports", "const ", "let "],
+            ".html": ["<!DOCTYPE", "<html", "<body"],
+            ".css":  ["{", "margin:", "padding:", "color:"],
+            ".json": ["{", "\":\"", "null", "true", "false"],
+            ".sh":   ["#!/bin/bash", "echo ", "export "],
+            ".c":    ["#include", "int main", "printf"],
+            ".py":   ["def ", "import ", "class ", "print(", "async def"],
+        }
+
+        detected_ext = ".py"
+        code_header = generated_code[:1000]
+        for ext, signals in _EXT_SIGNALS.items():
+            if any(sig in code_header for sig in signals):
+                detected_ext = ext
+                break
+        
+        final_ext = detected_ext
+
+        staging_file = os.path.join(staging_dir, f"{project_name}_stage_step_{i}{final_ext}")
+        os.makedirs(os.path.dirname(staging_file), exist_ok=True)
 
         with open(staging_file, "w", encoding="utf-8") as f:
-            f.write(clean_code)
-            
-        # 3. Only execute if it's an executable script (Don't try to run raw React components)
+            f.write(generated_code)
+
         test_result = ""
-        if run_cmd:
+        # 3. Only execute if it's Python
+        if final_ext == ".py":
             from terminal_node import execute_ghost_command
             workspace = os.path.dirname(staging_file)
-            print(f"[PIPELINE]: Executing staging script -> {run_cmd} {os.path.basename(staging_file)}")
-            test_result = await execute_ghost_command(f"{run_cmd} {staging_file}", workspace)
+            print(f"[PIPELINE]: Executing staging script -> python {os.path.basename(staging_file)}")
+            test_result = await execute_ghost_command(f"python {staging_file}", workspace)
             
             # Step 2C: The Refinement Loop (Self-Healing)
             attempts = 0
@@ -129,8 +148,19 @@ async def run_autonomous_lifecycle(goal: str, project_name: str):
                 with open(staging_file, "w", encoding="utf-8") as f:
                     f.write(clean_patched)
                     
-                test_result = await execute_ghost_command(f"{run_cmd} {staging_file}", workspace)
+                test_result = await execute_ghost_command(f"python {staging_file}", workspace)
                 attempts += 1
+        else:
+            target_path = os.path.join(WORKSPACE_ROOT, project_name, os.path.basename(staging_file))
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            import shutil
+            shutil.copy2(staging_file, target_path)
+            test_result = (
+                f"[PIPELINE]: Detected file type '{final_ext}'. "
+                f"Written to {target_path}. "
+                f"Not executed (non-Python). Ready for npm/vite build."
+            )
+        # ─────────────────────────────────────────────────────────────────────────────
                 
             if "Traceback" in test_result:
                 return f"Pipeline stalled at Step {i+1}. The code is failing tests. I need the Director's intervention."
