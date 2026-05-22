@@ -896,7 +896,9 @@ async def ignite_core():
             from core.agent_manager import get_agent
             agent = get_agent(friday_functions.friday_functions)
             # Initialize the session with the LiveKit room and the agent
-            session = AgentSession(room, agent)
+            model = get_realtime_model()
+            session = AgentSession(agent=agent, room=room)
+            await session.start(model=model)
             print("[COGNITIVE CORE]: F.R.I.D.A.Y. is online.")
             await asyncio.Event().wait()
         except Exception as e:
